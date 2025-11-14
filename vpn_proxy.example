@@ -1,1 +1,8 @@
-168.80.200.220:8000:5eHqXs:U1ZxPw
+# HTTP Proxy format: IP:PORT:USER:PASS
+# Example: 192.168.1.100:8080:username:password
+
+# VLESS format: vless://UUID@HOST:PORT?params#name
+# Example: vless://12345678-1234-1234-1234-123456789abc@example.com:443?flow=xtls-rprx-vision&security=reality&type=tcp&alpn=h2,http/1.1&sni=example.com&fp=chrome&pbk=YOUR_PUBLIC_KEY_HERE#example
+
+# Replace this line with your actual proxy configuration:
+192.168.1.100:8080:username:password

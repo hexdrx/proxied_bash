@@ -17,10 +17,23 @@ fi
 # Определяем директорию скрипта
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-echo "Step 1: Installing vpn script to /usr/local/bin..."
+echo "Step 1: Installing vpn scripts to /usr/local/bin..."
 cp "$SCRIPT_DIR/vpn" /usr/local/bin/vpn
 chmod +x /usr/local/bin/vpn
-echo "✓ Script installed"
+echo "✓ Main script installed"
+
+# Устанавливаем VLESS support скрипты
+if [ -f "$SCRIPT_DIR/vless_parser.sh" ]; then
+    cp "$SCRIPT_DIR/vless_parser.sh" /usr/local/bin/vless_parser.sh
+    chmod +x /usr/local/bin/vless_parser.sh
+    echo "✓ VLESS parser installed"
+fi
+
+if [ -f "$SCRIPT_DIR/vless_to_xray.sh" ]; then
+    cp "$SCRIPT_DIR/vless_to_xray.sh" /usr/local/bin/vless_to_xray.sh
+    chmod +x /usr/local/bin/vless_to_xray.sh
+    echo "✓ VLESS to xray converter installed"
+fi
 
 echo ""
 echo "Step 2: Setting up proxy configuration..."
@@ -38,7 +51,9 @@ if [ -f "$SCRIPT_DIR/vpn_proxy.example" ] && [ ! -f "$REAL_HOME/.vpn_proxy" ]; t
     echo "✓ Config file created: $REAL_HOME/.vpn_proxy"
     echo ""
     echo "⚠️  IMPORTANT: Edit ~/.vpn_proxy with your proxy details!"
-    echo "   Format: IP:PORT:USER:PASS"
+    echo "   Supported formats:"
+    echo "     HTTP Proxy: IP:PORT:USER:PASS"
+    echo "     VLESS: vless://UUID@HOST:PORT?params#name"
 else
     if [ -f "$REAL_HOME/.vpn_proxy" ]; then
         echo "✓ Config file already exists: $REAL_HOME/.vpn_proxy"
@@ -63,12 +78,19 @@ echo "Usage:"
 echo "  1. Edit your proxy settings:"
 echo "     nano ~/.vpn_proxy"
 echo ""
+echo "     Supported formats:"
+echo "       HTTP: IP:PORT:USER:PASS"
+echo "       VLESS: vless://UUID@HOST:PORT?params#name"
+echo ""
 echo "  2. Use vpn command to run apps through proxy:"
 echo "     vpn curl ifconfig.me"
 echo "     vpn wget https://example.com"
 echo "     vpn apt update"
 echo ""
+echo "  3. For VLESS: Install xray-core if not already installed"
+echo "     https://github.com/XTLS/Xray-core"
+echo ""
 echo "To uninstall:"
-echo "  sudo rm /usr/local/bin/vpn"
+echo "  sudo rm /usr/local/bin/vpn /usr/local/bin/vless_*.sh"
 echo "  rm ~/.vpn_proxy"
 echo ""

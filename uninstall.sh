@@ -16,12 +16,33 @@ fi
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo ~$REAL_USER)
 
-echo "Removing /usr/local/bin/vpn..."
+echo "Stopping xray if running..."
+if [ -f "/tmp/xray_vpn.pid" ]; then
+    pid=$(cat /tmp/xray_vpn.pid)
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        echo "✓ Stopped xray (PID: $pid)"
+    fi
+    rm -f /tmp/xray_vpn.pid
+fi
+
+echo ""
+echo "Removing vpn scripts from /usr/local/bin..."
 if [ -f "/usr/local/bin/vpn" ]; then
     rm -f /usr/local/bin/vpn
     echo "✓ Removed /usr/local/bin/vpn"
 else
     echo "✗ /usr/local/bin/vpn not found"
+fi
+
+if [ -f "/usr/local/bin/vless_parser.sh" ]; then
+    rm -f /usr/local/bin/vless_parser.sh
+    echo "✓ Removed /usr/local/bin/vless_parser.sh"
+fi
+
+if [ -f "/usr/local/bin/vless_to_xray.sh" ]; then
+    rm -f /usr/local/bin/vless_to_xray.sh
+    echo "✓ Removed /usr/local/bin/vless_to_xray.sh"
 fi
 
 echo ""
@@ -37,6 +58,21 @@ if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     fi
 else
     echo "Keeping configuration file"
+fi
+
+echo ""
+echo "Do you want to remove xray configuration from $REAL_HOME/.config/xray? (y/N)"
+read -r response2
+
+if [[ "$response2" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    if [ -d "$REAL_HOME/.config/xray" ]; then
+        rm -rf "$REAL_HOME/.config/xray"
+        echo "✓ Removed $REAL_HOME/.config/xray"
+    else
+        echo "✗ $REAL_HOME/.config/xray not found"
+    fi
+else
+    echo "Keeping xray configuration"
 fi
 
 echo ""

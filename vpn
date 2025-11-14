@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Файл с прокси данными
+PROXY_FILE="$HOME/.vpn_proxy"
+
+# Проверяем наличие файла с прокси
+if [ ! -f "$PROXY_FILE" ]; then
+    echo "Error: Proxy file $PROXY_FILE not found!"
+    echo "Create it with format: IP:PORT:USER:PASS"
+    echo "Example: 168.80.200.220:8000:username:password"
+    exit 1
+fi
+
+# Читаем прокси из файла
+PROXY_DATA=$(cat "$PROXY_FILE" | head -n 1)
+
+# Проверяем что данные не пустые
+if [ -z "$PROXY_DATA" ]; then
+    echo "Error: Proxy file is empty!"
+    exit 1
+fi
+
+# Парсим данные прокси
+IFS=':' read -r PROXY_IP PROXY_PORT PROXY_USER PROXY_PASS <<< "$PROXY_DATA"
+
+# Проверяем что все поля заполнены
+if [ -z "$PROXY_IP" ] || [ -z "$PROXY_PORT" ]; then
+    echo "Error: Invalid proxy format in $PROXY_FILE"
+    echo "Expected format: IP:PORT:USER:PASS"
+    exit 1
+fi
+
+# Формируем URL прокси с авторизацией или без
+if [ -n "$PROXY_USER" ] && [ -n "$PROXY_PASS" ]; then
+    PROXY_URL="http://${PROXY_USER}:${PROXY_PASS}@${PROXY_IP}:${PROXY_PORT}"
+else
+    PROXY_URL="http://${PROXY_IP}:${PROXY_PORT}"
+fi
+
+# Устанавливаем переменные окружения для прокси и запускаем команду
+export http_proxy="$PROXY_URL"
+export https_proxy="$PROXY_URL"
+export HTTP_PROXY="$PROXY_URL"
+export HTTPS_PROXY="$PROXY_URL"
+
+# Запускаем команду
+exec "$@"

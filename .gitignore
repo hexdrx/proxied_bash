@@ -1,0 +1,12 @@
+# Файл с паролем прокси не должен попасть в git
+.vpn_proxy
+vpn_proxy
+*_proxy
+
+# macOS
+.DS_Store
+
+# Временные файлы
+*.tmp
+*.bak
+*~

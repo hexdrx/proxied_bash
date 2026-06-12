@@ -2,10 +2,17 @@
 ==================================
 
 vpn                     - Основной скрипт для запуска команд через прокси
+vless_parser.sh         - Парсер VLESS URL
+vless_to_xray.sh        - Генератор конфигурации xray из VLESS
+ss_parser.sh            - Парсер Outline/Shadowsocks (ss://) URL
+ss_to_outline.sh        - Менеджер локального outline-proxy
+outline-proxy/          - Go-хелпер (Outline-префикс) на базе outline-sdk
 vpn_proxy.example       - Пример файла конфигурации прокси
 install.sh              - Скрипт автоматической установки
 uninstall.sh            - Скрипт удаления
 README.md               - Полная документация (английский)
+VLESS_GUIDE.md          - Руководство по VLESS
+OUTLINE_GUIDE.md        - Руководство по Outline/Shadowsocks
 INSTALL_RU.md           - Краткая инструкция по установке (русский)
 .gitignore              - Исключения для git
 FILES.txt               - Этот файл (описание структуры)

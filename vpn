@@ -4,6 +4,7 @@
 PROXY_FILE="$HOME/.vpn_proxy"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR="/usr/local/bin"
 VLESS_SCRIPT="$SCRIPT_DIR/vless_to_xray.sh"
+SS_SCRIPT="$SCRIPT_DIR/ss_to_outline.sh"
 LOCAL_HTTP_PORT=1081
 
 # Проверяем наличие файла с прокси
@@ -12,10 +13,12 @@ if [ ! -f "$PROXY_FILE" ]; then
     echo "Create it with one of these formats:"
     echo "  HTTP Proxy: IP:PORT:USER:PASS"
     echo "  VLESS: vless://UUID@HOST:PORT?params#name"
+    echo "  Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
     echo ""
     echo "Examples:"
     echo "  168.80.200.220:8000:username:password"
     echo "  vless://uuid@host:443?security=reality&sni=example.com#name"
+    echo "  ss://BASE64USERINFO@host:993?outline=1&prefix=%17%03%03%3F#name"
     exit 1
 fi
 
@@ -55,6 +58,29 @@ if [[ "$PROXY_DATA" =~ ^vless:// ]]; then
 
     # Используем локальный HTTP прокси от xray
     PROXY_URL="http://127.0.0.1:${LOCAL_HTTP_PORT}"
+
+elif [[ "$PROXY_DATA" =~ ^ss:// ]]; then
+    # Это Outline / Shadowsocks URL - нужен локальный outline-proxy
+    if [ ! -f "$SS_SCRIPT" ]; then
+        echo "Error: Outline support script not found at $SS_SCRIPT"
+        exit 1
+    fi
+
+    # Подключаем менеджер outline-proxy
+    source "$SS_SCRIPT"
+
+    # Запускаем outline-proxy, если ещё не запущен
+    if [ ! -f "$OUTLINE_PID_FILE" ] || ! kill -0 "$(cat "$OUTLINE_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+        echo "Starting outline-proxy with Outline configuration..."
+        if ! start_outline "$PROXY_DATA" > /dev/null; then
+            echo "Error: Failed to start outline-proxy"
+            cat "$OUTLINE_LOG_FILE" 2>/dev/null
+            exit 1
+        fi
+    fi
+
+    # Используем локальный HTTP прокси от outline-proxy (отдельный порт)
+    PROXY_URL="http://127.0.0.1:${OUTLINE_HTTP_PORT}"
 
 else
     # Это HTTP прокси в формате IP:PORT:USER:PASS

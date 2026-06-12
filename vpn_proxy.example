@@ -4,5 +4,8 @@
 # VLESS format: vless://UUID@HOST:PORT?params#name
 # Example: vless://12345678-1234-1234-1234-123456789abc@example.com:443?flow=xtls-rprx-vision&security=reality&type=tcp&alpn=h2,http/1.1&sni=example.com&fp=chrome&pbk=YOUR_PUBLIC_KEY_HERE#example
 
+# Outline/Shadowsocks format: ss://BASE64(method:password)@HOST:PORT?params#name
+# Example: ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpQQVNTV09SRA@example.com:993/?outline=1&prefix=%17%03%03%3F#My Server
+
 # Replace this line with your actual proxy configuration:
 192.168.1.100:8080:username:password

@@ -26,6 +26,17 @@ if [ -f "/tmp/xray_vpn.pid" ]; then
     rm -f /tmp/xray_vpn.pid
 fi
 
+echo "Stopping outline-proxy if running..."
+if [ -f "/tmp/outline_vpn.pid" ]; then
+    pid=$(cat /tmp/outline_vpn.pid)
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        echo "✓ Stopped outline-proxy (PID: $pid)"
+    fi
+    rm -f /tmp/outline_vpn.pid
+fi
+rm -f /tmp/outline_vpn.log
+
 echo ""
 echo "Removing vpn scripts from /usr/local/bin..."
 if [ -f "/usr/local/bin/vpn" ]; then
@@ -43,6 +54,21 @@ fi
 if [ -f "/usr/local/bin/vless_to_xray.sh" ]; then
     rm -f /usr/local/bin/vless_to_xray.sh
     echo "✓ Removed /usr/local/bin/vless_to_xray.sh"
+fi
+
+if [ -f "/usr/local/bin/ss_parser.sh" ]; then
+    rm -f /usr/local/bin/ss_parser.sh
+    echo "✓ Removed /usr/local/bin/ss_parser.sh"
+fi
+
+if [ -f "/usr/local/bin/ss_to_outline.sh" ]; then
+    rm -f /usr/local/bin/ss_to_outline.sh
+    echo "✓ Removed /usr/local/bin/ss_to_outline.sh"
+fi
+
+if [ -f "/usr/local/bin/outline-proxy" ]; then
+    rm -f /usr/local/bin/outline-proxy
+    echo "✓ Removed /usr/local/bin/outline-proxy"
 fi
 
 echo ""

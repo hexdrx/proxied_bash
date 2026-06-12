@@ -10,3 +10,6 @@ vpn_proxy
 *.tmp
 *.bak
 *~
+
+# Локальная dev-сборка outline-proxy (пребилты лежат в outline-proxy/bin/)
+outline-proxy/outline-proxy

@@ -117,7 +117,7 @@ ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpQQVNTV09SRA@example.com:993/?outline=1&prefi
 При использовании Outline, скрипт автоматически:
 1. Чистит URL (отрезает имя, убирает `outline=1`, сохраняет `prefix`)
 2. Запускает `outline-proxy` в фоне (если ещё не запущен)
-3. Использует локальный HTTP прокси от outline-proxy (127.0.0.1:1082)
+3. Использует локальный HTTP прокси от outline-proxy (127.0.0.1:18082)
 
 Подробности — в [OUTLINE_GUIDE.md](OUTLINE_GUIDE.md).
 
@@ -267,7 +267,7 @@ proxied_bash/
 1. Скрипт определяет что это Outline/Shadowsocks по префиксу `ss://`
 2. Вызывает `ss_parser.sh` для очистки URL (имя, `outline=1`, `prefix`)
 3. Вызывает `ss_to_outline.sh` для запуска хелпера `outline-proxy`
-4. `outline-proxy` поднимает локальный HTTP прокси (порт 1082) и дайлит
+4. `outline-proxy` поднимает локальный HTTP прокси (порт 18082) и дайлит
    Shadowsocks-соединение с сохранением Outline-префикса
 5. Скрипт устанавливает переменные окружения на локальный HTTP прокси
 6. Запускает вашу команду через локальный прокси

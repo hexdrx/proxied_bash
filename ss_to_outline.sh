@@ -7,7 +7,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTLINE_PID_FILE="/tmp/outline_vpn.pid"
 OUTLINE_LOG_FILE="/tmp/outline_vpn.log"
-OUTLINE_HTTP_PORT=1082   # отдельный порт, чтобы не конфликтовать с xray (1081)
+OUTLINE_HTTP_PORT=18082  # отдельный высокий порт (1082 часто занимает VS Code)
 
 # Подключаем парсер ss://
 source "$SCRIPT_DIR/ss_parser.sh"

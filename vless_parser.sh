@@ -2,7 +2,17 @@
 
 # Парсер VLESS URL в конфигурацию xray
 
-parse_vless_url() {
+# URL-декодирование значения (%XX -> байт)
+vless_urldecode() {
+    local value="$1"
+    # Экранируем обратные слэши, чтобы printf %b их не съел
+    value="${value//\\/\\\\}"
+    printf '%b' "${value//%/\\x}"
+}
+
+# Разбирает VLESS URL и складывает результат в переменные VLESS_*.
+# Используется генератором конфига — надёжнее, чем парсить обратно JSON.
+parse_vless_vars() {
     local vless_url="$1"
 
     # Проверяем что это VLESS URL
@@ -15,10 +25,10 @@ parse_vless_url() {
     local url_without_prefix="${vless_url#vless://}"
 
     # Извлекаем имя/тег (после #)
-    local name=""
-    if [[ "$url_without_prefix" =~ \#(.+)$ ]]; then
-        name="${BASH_REMATCH[1]}"
-        url_without_prefix="${url_without_prefix%#*}"
+    VLESS_NAME=""
+    if [[ "$url_without_prefix" == *"#"* ]]; then
+        VLESS_NAME=$(vless_urldecode "${url_without_prefix#*#}")
+        url_without_prefix="${url_without_prefix%%#*}"
     fi
 
     # Разделяем на основную часть и параметры (по ?)
@@ -29,61 +39,88 @@ parse_vless_url() {
     fi
 
     # Парсим основную часть: UUID@HOST:PORT
-    local uuid="${main_part%%@*}"
+    VLESS_UUID="${main_part%%@*}"
     local host_port="${main_part#*@}"
-    local host="${host_port%:*}"
-    local port="${host_port##*:}"
+    VLESS_HOST="${host_port%:*}"
+    VLESS_PORT="${host_port##*:}"
 
-    # Инициализируем параметры значениями по умолчанию
-    local flow=""
-    local security="none"
-    local type="tcp"
-    local alpn=""
-    local sni=""
-    local fp=""
-    local pbk=""
-    local path=""
-    local headerType=""
+    # Значения по умолчанию
+    VLESS_FLOW=""
+    VLESS_SECURITY="none"
+    VLESS_TYPE="tcp"
+    VLESS_ALPN=""
+    VLESS_SNI=""
+    VLESS_FP=""
+    VLESS_PBK=""
+    VLESS_SID=""
+    VLESS_SPX=""
+    VLESS_PATH=""
+    VLESS_MODE=""
+    VLESS_HEADERTYPE=""
+    VLESS_SERVICENAME=""
+    VLESS_HOSTHEADER=""
+    VLESS_ALLOWINSECURE="0"
 
     # Парсим параметры
     if [ -n "$params_part" ]; then
+        local param key value
+        local PARAMS
         IFS='&' read -ra PARAMS <<< "$params_part"
         for param in "${PARAMS[@]}"; do
             key="${param%%=*}"
-            value="${param#*=}"
-            # URL decode value
-            value=$(printf '%b' "${value//%/\\x}")
+            value=$(vless_urldecode "${param#*=}")
 
             case "$key" in
-                flow) flow="$value" ;;
-                security) security="$value" ;;
-                type) type="$value" ;;
-                alpn) alpn="$value" ;;
-                sni) sni="$value" ;;
-                fp) fp="$value" ;;
-                pbk) pbk="$value" ;;
-                path) path="$value" ;;
-                headerType) headerType="$value" ;;
+                flow) VLESS_FLOW="$value" ;;
+                security) VLESS_SECURITY="$value" ;;
+                type) VLESS_TYPE="$value" ;;
+                alpn) VLESS_ALPN="$value" ;;
+                sni) VLESS_SNI="$value" ;;
+                fp) VLESS_FP="$value" ;;
+                pbk) VLESS_PBK="$value" ;;
+                sid) VLESS_SID="$value" ;;
+                spx) VLESS_SPX="$value" ;;
+                path) VLESS_PATH="$value" ;;
+                mode) VLESS_MODE="$value" ;;
+                headerType) VLESS_HEADERTYPE="$value" ;;
+                serviceName) VLESS_SERVICENAME="$value" ;;
+                host) VLESS_HOSTHEADER="$value" ;;
+                allowInsecure) VLESS_ALLOWINSECURE="$value" ;;
             esac
         done
     fi
 
+    # SNI по умолчанию — сам хост
+    if [ -z "$VLESS_SNI" ]; then
+        VLESS_SNI="$VLESS_HOST"
+    fi
+
+    return 0
+}
+
+parse_vless_url() {
+    parse_vless_vars "$1" || return 1
+
     # Выводим результат в формате JSON
     cat <<EOF
 {
-    "uuid": "$uuid",
-    "host": "$host",
-    "port": $port,
-    "flow": "$flow",
-    "security": "$security",
-    "type": "$type",
-    "alpn": "$alpn",
-    "sni": "$sni",
-    "fp": "$fp",
-    "pbk": "$pbk",
-    "path": "$path",
-    "headerType": "$headerType",
-    "name": "$name"
+    "uuid": "$VLESS_UUID",
+    "host": "$VLESS_HOST",
+    "port": $VLESS_PORT,
+    "flow": "$VLESS_FLOW",
+    "security": "$VLESS_SECURITY",
+    "type": "$VLESS_TYPE",
+    "alpn": "$VLESS_ALPN",
+    "sni": "$VLESS_SNI",
+    "fp": "$VLESS_FP",
+    "pbk": "$VLESS_PBK",
+    "sid": "$VLESS_SID",
+    "spx": "$VLESS_SPX",
+    "path": "$VLESS_PATH",
+    "mode": "$VLESS_MODE",
+    "headerType": "$VLESS_HEADERTYPE",
+    "serviceName": "$VLESS_SERVICENAME",
+    "name": "$VLESS_NAME"
 }
 EOF
 }

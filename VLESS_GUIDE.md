@@ -70,12 +70,17 @@ vless://UUID@HOST:PORT?параметры#имя
 
 - `flow` - режим передачи данных (например, xtls-rprx-vision)
 - `security` - тип шифрования (tls, reality, none)
-- `type` - тип сетевого транспорта (tcp, ws, grpc)
-- `sni` - имя сервера для TLS/Reality
+- `type` - тип сетевого транспорта (tcp, ws, xhttp, httpupgrade, grpc)
+- `sni` - имя сервера для TLS/Reality (по умолчанию берётся сам хост)
 - `alpn` - протоколы уровня приложения (h2, http/1.1)
-- `fp` - fingerprint браузера (chrome, firefox, safari)
+- `fp` - fingerprint браузера (chrome, firefox, safari, qq)
 - `pbk` - публичный ключ для Reality
-- `path` - путь для WebSocket
+- `sid` - short ID для Reality
+- `spx` - spiderX для Reality
+- `path` - путь для WebSocket / xhttp / httpupgrade
+- `mode` - режим xhttp (auto, packet-up, stream-up, stream-one)
+- `host` - заголовок Host для WebSocket / xhttp
+- `serviceName` - имя сервиса для gRPC
 - `#имя` - имя подключения (для удобства)
 
 ## Примеры VLESS URL
@@ -95,10 +100,38 @@ vless://UUID@example.com:443?security=tls&sni=example.com&alpn=h2,http/1.1&type=
 vless://UUID@example.com:443?type=ws&security=tls&path=/websocket&sni=example.com#MyVPN
 ```
 
+### VLESS с XHTTP + Reality
+```
+vless://UUID@example.com:3478?security=reality&type=xhttp&mode=packet-up&path=/&sni=example.com&fp=qq&pbk=PUBLIC_KEY#MyVPN
+```
+
 ### VLESS без шифрования (не рекомендуется)
 ```
 vless://UUID@example.com:8080?security=none&type=tcp#MyVPN
 ```
+
+## Подписка вместо одного ключа
+
+Многие провайдеры выдают не отдельный ключ, а ссылку на подписку - список
+серверов по странам. Её можно положить в `~/.vpn_proxy` целиком:
+
+```
+https://cdn.example.com/sub/vless/12345678-1234-1234-1234-123456789abc
+```
+
+После этого доступен выбор страны:
+
+```bash
+vpn list                     # список стран из подписки
+vpn use de                   # выбрать страну по умолчанию
+vpn curl ifconfig.me         # запрос через выбранную страну
+vpn -c jp curl ifconfig.me   # разово через другую
+vpn update                   # перечитать подписку
+```
+
+Список серверов кэшируется в `~/.cache/vpn/servers.tsv` и обновляется раз в
+сутки. Для каждой страны поднимается отдельный процесс xray, так что команды
+через разные страны можно запускать одновременно.
 
 ## Управление xray
 
@@ -106,46 +139,53 @@ vless://UUID@example.com:8080?security=none&type=tcp#MyVPN
 
 ### Проверить статус
 ```bash
+vpn status
+```
+
+### Остановить
+```bash
+vpn stop de     # одну страну
+vpn stop all    # все
+```
+
+### Посмотреть логи и конфигурацию
+```bash
+# Для подписки - по стране
+cat ~/.cache/vpn/de/xray.log
+cat ~/.cache/vpn/de/config.json
+
+# Для одиночного VLESS
+cat ~/.cache/vpn/single/xray.log
+cat ~/.cache/vpn/single/config.json
+```
+
+### Управление напрямую (одиночный VLESS)
+```bash
 vless_to_xray.sh status
-```
-
-### Остановить xray
-```bash
 vless_to_xray.sh stop
-```
-
-### Перезапустить с новой конфигурацией
-```bash
 vless_to_xray.sh restart "vless://..."
-```
-
-### Посмотреть логи
-```bash
-cat /tmp/xray_vpn.log
-```
-
-### Проверить конфигурацию
-```bash
-cat ~/.config/xray/config.json
 ```
 
 ## Как работает VLESS режим
 
 1. Вы запускаете команду с префиксом `vpn`
-2. Скрипт определяет VLESS URL в `~/.vpn_proxy`
+2. Скрипт определяет VLESS URL в `~/.vpn_proxy` (или берёт нужную страну из подписки)
 3. Генерируется конфигурация для xray
-4. Xray запускается в фоне (если еще не запущен)
-5. Xray создает локальные прокси:
-   - SOCKS5 на порту 1080
-   - HTTP на порту 1081
-6. Скрипт перенаправляет вашу команду через локальный HTTP прокси
-7. Xray шифрует трафик и отправляет на VPN сервер
+4. Xray запускается в фоне (если еще не запущен) на свободной паре портов -
+   SOCKS5 и HTTP на 127.0.0.1, начиная с 1080
+5. Скрипт перенаправляет вашу команду через локальный HTTP прокси
+6. Xray шифрует трафик и отправляет на VPN сервер
+
+Порты не фиксированы: каждая страна получает свою пару, чтобы несколько
+подключений могли работать одновременно. Посмотреть их можно через `vpn status`.
 
 ## Поддерживаемые протоколы VLESS
 
 - ✅ VLESS + TCP + Reality (самый безопасный)
+- ✅ VLESS + XHTTP + Reality
 - ✅ VLESS + TCP + TLS
 - ✅ VLESS + WebSocket + TLS
+- ✅ VLESS + HTTPUpgrade + TLS
 - ✅ VLESS + gRPC + TLS
 - ✅ VLESS + TCP без шифрования
 
@@ -172,15 +212,18 @@ cat ~/.vpn_proxy
 
 ### Соединение не устанавливается
 ```bash
-# Проверьте логи xray
-cat /tmp/xray_vpn.log
+# Что запущено и на каких портах
+vpn status
+
+# Логи и конфиг (подставьте свою страну или single)
+cat ~/.cache/vpn/de/xray.log
+cat ~/.cache/vpn/de/config.json
 
 # Проверьте доступность сервера
 ping HOST
-telnet HOST PORT
 
-# Проверьте конфигурацию
-cat ~/.config/xray/config.json
+# Проверьте что конфиг валиден для xray
+xray -test -c ~/.cache/vpn/de/config.json
 ```
 
 ### Медленное соединение

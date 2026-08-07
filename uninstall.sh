@@ -16,6 +16,8 @@ fi
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo ~$REAL_USER)
 
+VPN_CACHE_DIR="${XDG_CACHE_HOME:-$REAL_HOME/.cache}/vpn"
+
 echo "Stopping xray if running..."
 if [ -f "/tmp/xray_vpn.pid" ]; then
     pid=$(cat /tmp/xray_vpn.pid)
@@ -25,6 +27,17 @@ if [ -f "/tmp/xray_vpn.pid" ]; then
     fi
     rm -f /tmp/xray_vpn.pid
 fi
+
+# Инстансы, поднятые под каждую страну подписки
+for pid_file in "$VPN_CACHE_DIR"/*/xray.pid; do
+    [ -f "$pid_file" ] || continue
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        echo "✓ Stopped xray for $(basename "$(dirname "$pid_file")") (PID: $pid)"
+    fi
+    rm -f "$pid_file"
+done
 
 echo "Stopping outline-proxy if running..."
 if [ -f "/tmp/outline_vpn.pid" ]; then
@@ -54,6 +67,11 @@ fi
 if [ -f "/usr/local/bin/vless_to_xray.sh" ]; then
     rm -f /usr/local/bin/vless_to_xray.sh
     echo "✓ Removed /usr/local/bin/vless_to_xray.sh"
+fi
+
+if [ -f "/usr/local/bin/subscription.sh" ]; then
+    rm -f /usr/local/bin/subscription.sh
+    echo "✓ Removed /usr/local/bin/subscription.sh"
 fi
 
 if [ -f "/usr/local/bin/ss_parser.sh" ]; then
@@ -99,6 +117,18 @@ if [[ "$response2" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     fi
 else
     echo "Keeping xray configuration"
+fi
+
+echo ""
+echo "Do you want to remove the subscription cache $VPN_CACHE_DIR and selected country? (y/N)"
+read -r response3
+
+if [[ "$response3" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    rm -rf "$VPN_CACHE_DIR"
+    rm -f "$REAL_HOME/.vpn_country"
+    echo "✓ Removed subscription cache and selected country"
+else
+    echo "Keeping subscription cache"
 fi
 
 echo ""

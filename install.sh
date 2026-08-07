@@ -35,6 +35,12 @@ if [ -f "$SCRIPT_DIR/vless_to_xray.sh" ]; then
     echo "✓ VLESS to xray converter installed"
 fi
 
+if [ -f "$SCRIPT_DIR/subscription.sh" ]; then
+    cp "$SCRIPT_DIR/subscription.sh" /usr/local/bin/subscription.sh
+    chmod +x /usr/local/bin/subscription.sh
+    echo "✓ Subscription support installed"
+fi
+
 # Устанавливаем Outline/Shadowsocks support скрипты
 if [ -f "$SCRIPT_DIR/ss_parser.sh" ]; then
     cp "$SCRIPT_DIR/ss_parser.sh" /usr/local/bin/ss_parser.sh
@@ -108,9 +114,10 @@ if [ -f "$SCRIPT_DIR/vpn_proxy.example" ] && [ ! -f "$REAL_HOME/.vpn_proxy" ]; t
     echo ""
     echo "⚠️  IMPORTANT: Edit ~/.vpn_proxy with your proxy details!"
     echo "   Supported formats:"
-    echo "     HTTP Proxy: IP:PORT:USER:PASS"
+    echo "     Subscription: https://example.com/sub/vless/UUID"
     echo "     VLESS: vless://UUID@HOST:PORT?params#name"
     echo "     Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
+    echo "     HTTP Proxy: IP:PORT:USER:PASS"
 else
     if [ -f "$REAL_HOME/.vpn_proxy" ]; then
         echo "✓ Config file already exists: $REAL_HOME/.vpn_proxy"
@@ -136,22 +143,27 @@ echo "  1. Edit your proxy settings:"
 echo "     nano ~/.vpn_proxy"
 echo ""
 echo "     Supported formats:"
-echo "       HTTP: IP:PORT:USER:PASS"
+echo "       Subscription: https://example.com/sub/vless/UUID"
 echo "       VLESS: vless://UUID@HOST:PORT?params#name"
 echo "       Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
+echo "       HTTP: IP:PORT:USER:PASS"
 echo ""
 echo "  2. Use vpn command to run apps through proxy:"
 echo "     vpn curl ifconfig.me"
 echo "     vpn wget https://example.com"
 echo "     vpn apt update"
 echo ""
-echo "  3. For VLESS: Install xray-core if not already installed"
+echo "  3. With a subscription you can pick a country:"
+echo "     vpn list                     # available countries"
+echo "     vpn use de                   # set the default one"
+echo "     vpn -c jp curl ifconfig.me   # one-off override"
+echo ""
+echo "  4. For VLESS: Install xray-core if not already installed"
 echo "     https://github.com/XTLS/Xray-core"
 echo ""
-echo "  4. For Outline (ss://): the outline-proxy helper is built automatically"
-echo "     (requires Go: https://go.dev/dl/)"
+echo "  5. For Outline (ss://): the outline-proxy helper is installed from a"
+echo "     prebuilt binary, or built from source if Go is available"
 echo ""
 echo "To uninstall:"
-echo "  sudo rm /usr/local/bin/vpn /usr/local/bin/vless_*.sh /usr/local/bin/ss_*.sh /usr/local/bin/outline-proxy"
-echo "  rm ~/.vpn_proxy"
+echo "  sudo ./uninstall.sh"
 echo ""

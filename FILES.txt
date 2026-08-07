@@ -4,14 +4,17 @@
 vpn                     - Основной скрипт для запуска команд через прокси
 vless_parser.sh         - Парсер VLESS URL
 vless_to_xray.sh        - Генератор конфигурации xray из VLESS
+subscription.sh         - Загрузка, кэш и поиск по подписке
 ss_parser.sh            - Парсер Outline/Shadowsocks (ss://) URL
 ss_to_outline.sh        - Менеджер локального outline-proxy
 outline-proxy/          - Go-хелпер (Outline-префикс) на базе outline-sdk
+test_vless.sh           - Тесты парсера, конфигов и подписки
+test_ss.sh              - Тесты парсера ss:// URL
 vpn_proxy.example       - Пример файла конфигурации прокси
 install.sh              - Скрипт автоматической установки
 uninstall.sh            - Скрипт удаления
-README.md               - Полная документация (английский)
-VLESS_GUIDE.md          - Руководство по VLESS
+README.md               - Полная документация (русский)
+VLESS_GUIDE.md          - Подробное руководство по VLESS
 OUTLINE_GUIDE.md        - Руководство по Outline/Shadowsocks
 INSTALL_RU.md           - Краткая инструкция по установке (русский)
 .gitignore              - Исключения для git
@@ -25,14 +28,22 @@ FILES.txt               - Этот файл (описание структуры
 
 2. Настройка:
    nano ~/.vpn_proxy
-   
-   Формат: IP:PORT:USER:PASS
-   Пример: 168.80.200.220:8000:username:password
+
+   Один из четырёх форматов:
+     https://example.com/sub/vless/UUID   - подписка (выбор страны)
+     vless://UUID@HOST:PORT?params#name   - одиночный VLESS
+     ss://BASE64@HOST:PORT?params#name    - Outline / Shadowsocks
+     IP:PORT:USER:PASS                    - HTTP-прокси
 
 3. Использование:
    vpn curl ifconfig.me
    vpn wget https://example.com
    vpn apt update
+
+4. Если подписка - выбор страны:
+   vpn list                     - список стран
+   vpn use de                   - страна по умолчанию
+   vpn -c jp curl ifconfig.me   - разово через Японию
 
 ОПИСАНИЕ ФАЙЛОВ
 ==================================
@@ -40,10 +51,44 @@ FILES.txt               - Этот файл (описание структуры
 vpn
 ---
 Bash-скрипт который:
-- Читает прокси из ~/.vpn_proxy
-- Парсит формат IP:PORT:USER:PASS
+- Читает конфигурацию из ~/.vpn_proxy
+- Определяет режим: подписка, VLESS, Outline/ss:// или HTTP-прокси
+- Поднимает xray под нужную страну (для VLESS и подписки)
+- Поднимает outline-proxy (для ss://)
 - Устанавливает переменные HTTP_PROXY и HTTPS_PROXY
 - Запускает переданную команду
+Подкоманды: list, use, status, stop, update
+
+vless_parser.sh
+---------------
+Разбирает vless:// URL на составляющие (UUID, хост, порт,
+транспорт, параметры reality/tls, имя сервера).
+
+vless_to_xray.sh
+----------------
+Генерирует конфиг xray из разобранного VLESS URL и управляет
+процессом xray (start/stop/restart/status).
+Транспорты: tcp, ws, xhttp, httpupgrade, grpc.
+
+subscription.sh
+---------------
+Скачивает подписку, декодирует base64, вытаскивает список
+серверов со слагами стран, кэширует его и ищет по нему.
+
+ss_parser.sh
+------------
+Разбирает и чистит ss:// URL (SIP002 / Outline): отрезает имя,
+убирает outline=1, сохраняет prefix.
+
+ss_to_outline.sh
+----------------
+Управляет локальным хелпером outline-proxy: запуск, остановка,
+статус. Слушает HTTP на 127.0.0.1:18082.
+
+test_vless.sh
+-------------
+Тесты: разбор URL, генерация конфигов (включая проверку через
+xray -test), декодирование подписки и поиск страны.
 
 vpn_proxy.example
 -----------------
@@ -53,15 +98,16 @@ vpn_proxy.example
 install.sh
 ----------
 Автоматическая установка:
-- Копирует vpn в /usr/local/bin/
+- Копирует vpn и вспомогательные скрипты в /usr/local/bin/
 - Создает ~/.vpn_proxy из примера
 - Устанавливает права доступа
 
 uninstall.sh
 ------------
 Удаление:
-- Удаляет /usr/local/bin/vpn
-- Опционально удаляет ~/.vpn_proxy
+- Останавливает запущенные процессы xray
+- Удаляет скрипты из /usr/local/bin
+- Опционально удаляет ~/.vpn_proxy, конфиг xray и кэш подписки
 
 README.md
 ---------

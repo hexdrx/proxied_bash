@@ -1,100 +1,328 @@
 #!/bin/bash
 
-# Файл с прокси данными
-PROXY_FILE="$HOME/.vpn_proxy"
+# Запуск команд через прокси: HTTP-прокси, VLESS, Outline/Shadowsocks
+# или подписка с выбором страны.
+
+PROXY_FILE="${VPN_PROXY_FILE:-$HOME/.vpn_proxy}"
+COUNTRY_FILE="${VPN_COUNTRY_FILE:-$HOME/.vpn_country}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR="/usr/local/bin"
 VLESS_SCRIPT="$SCRIPT_DIR/vless_to_xray.sh"
 SS_SCRIPT="$SCRIPT_DIR/ss_to_outline.sh"
-LOCAL_HTTP_PORT=1081
+SUB_SCRIPT="$SCRIPT_DIR/subscription.sh"
+VPN_CACHE_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}"
+# С какого порта начинаем искать свободную пару для xray
+PORT_BASE=1080
+PORT_LIMIT=1200
 
-# Проверяем наличие файла с прокси
-if [ ! -f "$PROXY_FILE" ]; then
-    echo "Error: Proxy file $PROXY_FILE not found!"
-    echo "Create it with one of these formats:"
-    echo "  HTTP Proxy: IP:PORT:USER:PASS"
-    echo "  VLESS: vless://UUID@HOST:PORT?params#name"
-    echo "  Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
-    echo ""
-    echo "Examples:"
-    echo "  168.80.200.220:8000:username:password"
-    echo "  vless://uuid@host:443?security=reality&sni=example.com#name"
-    echo "  ss://BASE64USERINFO@host:993?outline=1&prefix=%17%03%03%3F#name"
+usage() {
+    cat <<'EOF'
+Usage:
+  vpn [-c COUNTRY] <command> [args...]   запустить команду через прокси
+  vpn list                               список стран из подписки
+  vpn use <country>                      выбрать страну по умолчанию
+  vpn status                             какие подключения запущены
+  vpn stop [country|all]                 остановить xray
+  vpn update                             перечитать подписку
+
+Examples:
+  vpn curl ifconfig.me
+  vpn -c de curl ifconfig.me
+  vpn use nl && vpn npm install
+  vpn -- list                            запустить программу с именем "list"
+
+Config (~/.vpn_proxy), первая значащая строка:
+  https://example.com/sub/vless/UUID     подписка (выбор страны)
+  vless://UUID@HOST:PORT?params#name     одиночный VLESS
+  ss://BASE64@HOST:PORT?params#name      Outline / Shadowsocks
+  IP:PORT:USER:PASS                      HTTP-прокси
+EOF
+}
+
+die() {
+    echo "Error: $1" >&2
     exit 1
-fi
+}
 
-# Читаем прокси из файла
-PROXY_DATA=$(cat "$PROXY_FILE" | head -n 1)
+# Первая непустая строка конфига, не комментарий
+read_proxy_config() {
+    [ -f "$PROXY_FILE" ] || return 1
+    awk 'NF && $1 !~ /^#/ { print; exit }' "$PROXY_FILE"
+}
 
-# Проверяем что данные не пустые
-if [ -z "$PROXY_DATA" ]; then
-    echo "Error: Proxy file is empty!"
-    exit 1
-fi
+# Свободен ли TCP-порт на localhost
+port_is_free() {
+    ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
 
-# Определяем тип прокси (VLESS или HTTP)
-if [[ "$PROXY_DATA" =~ ^vless:// ]]; then
-    # Это VLESS URL - нужен xray
-    if [ ! -f "$VLESS_SCRIPT" ]; then
-        echo "Error: VLESS support script not found at $VLESS_SCRIPT"
-        exit 1
-    fi
+# Ищет свободную пару портов (socks, http). Печатает "SOCKS HTTP".
+alloc_ports() {
+    local p=$PORT_BASE
+    while [ "$p" -lt "$PORT_LIMIT" ]; do
+        if port_is_free "$p" && port_is_free $((p + 1)); then
+            echo "$p $((p + 1))"
+            return 0
+        fi
+        p=$((p + 2))
+    done
+    return 1
+}
 
-    # Проверяем и запускаем xray если нужно
-    source "$VLESS_SCRIPT"
+# Поднимает (или переиспользует) xray для сервера и печатает локальный HTTP-порт.
+# ensure_xray <slug> <vless_url>
+ensure_xray() {
+    local slug="$1" vless_url="$2"
+    local dir="$VPN_CACHE_DIR/$slug"
+    local config="$dir/config.json"
+    local pid_file="$dir/xray.pid"
+    local log_file="$dir/xray.log"
+    local url_file="$dir/url"
+    local ports_file="$dir/ports"
+    local socks_port http_port pid
 
-    # Проверяем запущен ли xray
-    XRAY_PID_FILE="/tmp/xray_vpn.pid"
-    if [ ! -f "$XRAY_PID_FILE" ] || ! kill -0 $(cat "$XRAY_PID_FILE" 2>/dev/null) 2>/dev/null; then
-        echo "Starting xray with VLESS configuration..."
-        generate_xray_config "$PROXY_DATA" > /dev/null
-        start_xray > /dev/null
+    mkdir -p "$dir"
 
-        if [ $? -ne 0 ]; then
-            echo "Error: Failed to start xray"
-            echo "Check if xray is installed: https://github.com/XTLS/Xray-core"
-            exit 1
+    # Уже запущен для этого же сервера — переиспользуем
+    if [ -f "$pid_file" ] && [ -f "$ports_file" ] && [ -f "$url_file" ]; then
+        pid=$(cat "$pid_file")
+        if kill -0 "$pid" 2>/dev/null; then
+            if [ "$(cat "$url_file")" = "$vless_url" ]; then
+                awk '{ print $2 }' "$ports_file"
+                return 0
+            fi
+            # Сервер в подписке сменился — перезапускаем
+            echo "Server for '$slug' changed, restarting xray..." >&2
+            kill "$pid" 2>/dev/null
+            rm -f "$pid_file"
         fi
     fi
 
-    # Используем локальный HTTP прокси от xray
-    PROXY_URL="http://127.0.0.1:${LOCAL_HTTP_PORT}"
+    read -r socks_port http_port <<< "$(alloc_ports)"
+    [ -n "$http_port" ] || die "no free local ports in range $PORT_BASE-$PORT_LIMIT"
 
-elif [[ "$PROXY_DATA" =~ ^ss:// ]]; then
-    # Это Outline / Shadowsocks URL - нужен локальный outline-proxy
-    if [ ! -f "$SS_SCRIPT" ]; then
-        echo "Error: Outline support script not found at $SS_SCRIPT"
-        exit 1
+    source "$VLESS_SCRIPT"
+    generate_xray_config "$vless_url" "$config" "$socks_port" "$http_port" > /dev/null || \
+        die "failed to generate xray config for '$slug'"
+
+    if ! start_xray "$config" "$pid_file" "$log_file" > /dev/null; then
+        echo "--- xray log ---" >&2
+        cat "$log_file" >&2 2>/dev/null
+        die "failed to start xray for '$slug'"
     fi
 
-    # Подключаем менеджер outline-proxy
+    echo "$vless_url" > "$url_file"
+    echo "$socks_port $http_port" > "$ports_file"
+    echo "$http_port"
+}
+
+# Подписка загружена и актуальна
+require_subscription() {
+    [ -f "$SUB_SCRIPT" ] || die "subscription support script not found at $SUB_SCRIPT"
+    source "$SUB_SCRIPT"
+    sub_refresh "$SUB_URL" || die "failed to load subscription"
+}
+
+cmd_list() {
+    require_subscription
+    local current=""
+    [ -f "$COUNTRY_FILE" ] && current=$(cat "$COUNTRY_FILE")
+
+    # Название идёт последним: эмодзи и кириллица ломают выравнивание по ширине
+    sub_servers | awk -F'\t' -v cur="$current" '
+        { mark = ($1 == cur ? "*" : " ")
+          printf "%s %-6s %-14s %s\n", mark, $1, $2, $3 }'
+}
+
+cmd_use() {
+    local query="$1"
+    [ -n "$query" ] || die "usage: vpn use <country>   (see 'vpn list')"
+
+    require_subscription
+    local row
+    row=$(sub_find "$query") || exit 1
+
+    local slug name
+    slug=$(printf '%s' "$row" | cut -f1)
+    name=$(printf '%s' "$row" | cut -f3)
+
+    echo "$slug" > "$COUNTRY_FILE"
+    echo "Default country: $name  [$slug]"
+}
+
+cmd_status() {
+    local found=0 dir slug pid ports
+    for dir in "$VPN_CACHE_DIR"/*/; do
+        [ -f "$dir/xray.pid" ] || continue
+        slug=$(basename "$dir")
+        pid=$(cat "$dir/xray.pid")
+        if kill -0 "$pid" 2>/dev/null; then
+            ports=$(cat "$dir/ports" 2>/dev/null)
+            echo "  $slug  running (PID $pid)  socks=127.0.0.1:${ports%% *}  http=127.0.0.1:${ports##* }"
+            found=1
+        else
+            rm -f "$dir/xray.pid"
+        fi
+    done
+    [ "$found" -eq 1 ] || echo "  no xray instances running"
+
+    if [ -f "$COUNTRY_FILE" ]; then
+        echo ""
+        echo "Default country: $(cat "$COUNTRY_FILE")"
+    fi
+}
+
+cmd_stop() {
+    local target="${1:-all}" dir slug pid stopped=0
+    for dir in "$VPN_CACHE_DIR"/*/; do
+        [ -f "$dir/xray.pid" ] || continue
+        slug=$(basename "$dir")
+        if [ "$target" != "all" ] && [ "$target" != "$slug" ]; then
+            continue
+        fi
+        pid=$(cat "$dir/xray.pid")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            echo "Stopped $slug (PID $pid)"
+            stopped=1
+        fi
+        rm -f "$dir/xray.pid"
+    done
+    [ "$stopped" -eq 1 ] || echo "Nothing to stop"
+}
+
+cmd_update() {
+    [ -f "$SUB_SCRIPT" ] || die "subscription support script not found at $SUB_SCRIPT"
+    source "$SUB_SCRIPT"
+    local count
+    count=$(sub_fetch "$SUB_URL") || exit 1
+    echo "Subscription updated: $count servers"
+}
+
+# --- Разбор аргументов ---
+
+COUNTRY=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -c|--country)
+            COUNTRY="$2"
+            [ -n "$COUNTRY" ] || die "-c requires a country (see 'vpn list')"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ $# -eq 0 ] && [ -z "$COUNTRY" ]; then
+    usage
+    exit 1
+fi
+
+# --- Конфигурация ---
+
+PROXY_DATA=$(read_proxy_config) || die "proxy file $PROXY_FILE not found!
+Create it with one of these formats:
+  Subscription: https://example.com/sub/vless/UUID
+  VLESS:        vless://UUID@HOST:PORT?params#name
+  Outline/SS:   ss://BASE64USERINFO@host:993?outline=1&prefix=%17%03%03%3F#name
+  HTTP Proxy:   IP:PORT:USER:PASS"
+
+[ -n "$PROXY_DATA" ] || die "proxy file $PROXY_FILE is empty!"
+
+SUB_URL=""
+if [[ "$PROXY_DATA" =~ ^https?:// ]]; then
+    SUB_URL="$PROXY_DATA"
+fi
+
+# --- Встроенные подкоманды (только в режиме подписки) ---
+
+case "$1" in
+    list|use|status|stop|update)
+        if [ -z "$SUB_URL" ] && [ "$1" != "status" ] && [ "$1" != "stop" ]; then
+            die "'$1' requires a subscription URL in $PROXY_FILE"
+        fi
+        subcommand="$1"
+        shift
+        case "$subcommand" in
+            list)   cmd_list ;;
+            use)    cmd_use "$1" ;;
+            status) cmd_status ;;
+            stop)   cmd_stop "$1" ;;
+            update) cmd_update ;;
+        esac
+        exit $?
+        ;;
+esac
+
+[ $# -gt 0 ] || die "no command given. See 'vpn --help'"
+
+# --- Определяем прокси ---
+
+if [ -n "$SUB_URL" ]; then
+    # Режим подписки: выбираем страну и поднимаем для неё xray
+    require_subscription
+
+    if [ -z "$COUNTRY" ] && [ -f "$COUNTRY_FILE" ]; then
+        COUNTRY=$(cat "$COUNTRY_FILE")
+    fi
+    if [ -z "$COUNTRY" ]; then
+        # Страна не выбрана — берём первый сервер из подписки
+        COUNTRY=$(sub_servers | head -n 1 | cut -f1) || exit 1
+        echo "No country selected, using '$COUNTRY'. Set one with 'vpn use <country>'." >&2
+    fi
+
+    ROW=$(sub_find "$COUNTRY") || exit 1
+    SLUG=$(printf '%s' "$ROW" | cut -f1)
+    VLESS_URL=$(printf '%s' "$ROW" | cut -f4)
+
+    HTTP_PORT=$(ensure_xray "$SLUG" "$VLESS_URL") || exit 1
+    PROXY_URL="http://127.0.0.1:${HTTP_PORT}"
+
+elif [[ "$PROXY_DATA" =~ ^vless:// ]]; then
+    # Одиночный VLESS URL
+    [ -n "$COUNTRY" ] && die "-c works only with a subscription URL in $PROXY_FILE"
+    [ -f "$VLESS_SCRIPT" ] || die "VLESS support script not found at $VLESS_SCRIPT"
+
+    HTTP_PORT=$(ensure_xray "single" "$PROXY_DATA") || exit 1
+    PROXY_URL="http://127.0.0.1:${HTTP_PORT}"
+
+elif [[ "$PROXY_DATA" =~ ^ss:// ]]; then
+    # Outline / Shadowsocks — нужен локальный outline-proxy
+    [ -n "$COUNTRY" ] && die "-c works only with a subscription URL in $PROXY_FILE"
+    [ -f "$SS_SCRIPT" ] || die "Outline support script not found at $SS_SCRIPT"
+
     source "$SS_SCRIPT"
 
     # Запускаем outline-proxy, если ещё не запущен
     if [ ! -f "$OUTLINE_PID_FILE" ] || ! kill -0 "$(cat "$OUTLINE_PID_FILE" 2>/dev/null)" 2>/dev/null; then
-        echo "Starting outline-proxy with Outline configuration..."
+        echo "Starting outline-proxy with Outline configuration..." >&2
         if ! start_outline "$PROXY_DATA" > /dev/null; then
-            echo "Error: Failed to start outline-proxy"
-            cat "$OUTLINE_LOG_FILE" 2>/dev/null
-            exit 1
+            cat "$OUTLINE_LOG_FILE" >&2 2>/dev/null
+            die "failed to start outline-proxy"
         fi
     fi
 
-    # Используем локальный HTTP прокси от outline-proxy (отдельный порт)
     PROXY_URL="http://127.0.0.1:${OUTLINE_HTTP_PORT}"
 
 else
-    # Это HTTP прокси в формате IP:PORT:USER:PASS
-    # Парсим данные прокси
+    # HTTP-прокси в формате IP:PORT:USER:PASS
+    [ -n "$COUNTRY" ] && die "-c works only with a subscription URL in $PROXY_FILE"
+
     IFS=':' read -r PROXY_IP PROXY_PORT PROXY_USER PROXY_PASS <<< "$PROXY_DATA"
 
-    # Проверяем что все поля заполнены
     if [ -z "$PROXY_IP" ] || [ -z "$PROXY_PORT" ]; then
-        echo "Error: Invalid proxy format in $PROXY_FILE"
-        echo "Expected format: IP:PORT:USER:PASS or vless://..."
-        exit 1
+        die "invalid proxy format in $PROXY_FILE
+Expected: IP:PORT:USER:PASS, vless://..., ss://... or https://..."
     fi
 
-    # Формируем URL прокси с авторизацией или без
     if [ -n "$PROXY_USER" ] && [ -n "$PROXY_PASS" ]; then
         PROXY_URL="http://${PROXY_USER}:${PROXY_PASS}@${PROXY_IP}:${PROXY_PORT}"
     else
@@ -107,6 +335,7 @@ export http_proxy="$PROXY_URL"
 export https_proxy="$PROXY_URL"
 export HTTP_PROXY="$PROXY_URL"
 export HTTPS_PROXY="$PROXY_URL"
+export all_proxy="$PROXY_URL"
+export ALL_PROXY="$PROXY_URL"
 
-# Запускаем команду
 exec "$@"

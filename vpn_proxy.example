@@ -1,11 +1,22 @@
-# HTTP Proxy format: IP:PORT:USER:PASS
-# Example: 192.168.1.100:8080:username:password
+# Первая непустая строка (не комментарий) — ваша конфигурация.
+# Поддерживаются четыре формата:
 
-# VLESS format: vless://UUID@HOST:PORT?params#name
-# Example: vless://12345678-1234-1234-1234-123456789abc@example.com:443?flow=xtls-rprx-vision&security=reality&type=tcp&alpn=h2,http/1.1&sni=example.com&fp=chrome&pbk=YOUR_PUBLIC_KEY_HERE#example
+# 1. Подписка — список серверов по странам, можно выбирать страну
+#    Формат: https://... (URL, отдающий список vless:// ссылок, обычно в base64)
+#    Пример: https://cdn.example.com/sub/vless/12345678-1234-1234-1234-123456789abc
+#    Использование: vpn list / vpn use de / vpn -c jp curl ifconfig.me
 
-# Outline/Shadowsocks format: ss://BASE64(method:password)@HOST:PORT?params#name
-# Example: ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpQQVNTV09SRA@example.com:993/?outline=1&prefix=%17%03%03%3F#My Server
+# 2. Одиночный VLESS сервер
+#    Формат: vless://UUID@HOST:PORT?params#name
+#    Пример: vless://12345678-1234-1234-1234-123456789abc@example.com:443?flow=xtls-rprx-vision&security=reality&type=tcp&alpn=h2,http/1.1&sni=example.com&fp=chrome&pbk=YOUR_PUBLIC_KEY_HERE#example
 
-# Replace this line with your actual proxy configuration:
+# 3. Outline / Shadowsocks
+#    Формат: ss://BASE64(method:password)@HOST:PORT?params#name
+#    Пример: ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpQQVNTV09SRA@example.com:993/?outline=1&prefix=%17%03%03%3F#My Server
+
+# 4. HTTP-прокси
+#    Формат: IP:PORT:USER:PASS
+#    Пример: 192.168.1.100:8080:username:password
+
+# Замените строку ниже на свою конфигурацию:
 192.168.1.100:8080:username:password

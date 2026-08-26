@@ -14,10 +14,11 @@ sudo ./install.sh
 nano ~/.vpn_proxy
 ```
 
-Укажите один из трёх форматов:
+Укажите один из форматов:
 
 ```
 https://example.com/sub/vless/UUID     # подписка (выбор страны)
+incy://crypt1/PAYLOAD                  # та же подписка в deep-link (нужен python3)
 vless://UUID@HOST:PORT?params#name     # одиночный VLESS сервер
 IP:PORT:USER:PASS                      # HTTP-прокси
 ```

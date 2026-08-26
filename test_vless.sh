@@ -169,6 +169,131 @@ rm -f "$VPN_SERVERS_FILE"
 COUNT_PLAIN=$(sub_fetch "file://$TMP_DIR/plain.txt")
 check_eq "plain-text подписка разобрана" "$COUNT_PLAIN" "4"
 
+echo ""
+echo "v2ray-JSON subscription:"
+
+# Часть панелей (Remnawave) отдаёт не список ссылок, а массив целых
+# Xray-конфигов. Значения выдуманы; важна структура: grpc+reality, ws+tls
+# и одна запись на протоколе, который клиент не тянет.
+cat > "$TMP_DIR/sub.json" <<'JSON'
+[
+ {"remarks":"🇩🇪 Германия","inbounds":[{"protocol":"socks"}],"outbounds":[
+   {"tag":"proxy","protocol":"vless",
+    "settings":{"vnext":[{"address":"germany.example.top","port":443,
+      "users":[{"id":"11111111-2222-3333-4444-555555555555","encryption":"none","flow":""}]}]},
+    "streamSettings":{"network":"grpc",
+      "grpcSettings":{"serviceName":"abcdef0123456789","authority":"","mode":false},
+      "security":"reality",
+      "realitySettings":{"serverName":"germany.example.top","fingerprint":"chrome",
+        "publicKey":"e4Vx7ENhom990GOG_B1aEUNfF4d09JEnWWc8ggszBdA","shortId":"0123abcd"},
+      "sockopt":{"tcpMaxSeg":1000}}},
+   {"tag":"direct","protocol":"freedom"}]},
+ {"remarks":"📶 Белые списки","outbounds":[
+   {"tag":"proxy","protocol":"vless",
+    "settings":{"vnext":[{"address":"cdn.example.top","port":8443,
+      "users":[{"id":"66666666-7777-8888-9999-000000000000","encryption":"none","flow":""}]}]},
+    "streamSettings":{"network":"ws",
+      "wsSettings":{"path":"/api/v1/assets","host":"cdn-edge.example.top","headers":{}},
+      "security":"tls",
+      "tlsSettings":{"serverName":"cdn.example.top","fingerprint":"chrome","alpn":["http/1.1"]}}}]},
+ {"remarks":"🎮 Игровой EU","outbounds":[
+   {"tag":"proxy","protocol":"hysteria"},{"tag":"direct","protocol":"freedom"}]}
+]
+JSON
+
+rm -f "$VPN_SERVERS_FILE"
+COUNT_JSON=$(sub_fetch "file://$TMP_DIR/sub.json")
+# Запись на hysteria отброшена, а не выдана ссылкой, падающей позже
+check_eq "v2ray-json: разобрана, hysteria пропущена" "$COUNT_JSON" "2"
+
+JSON_DE=$(sub_find germany | cut -f4)
+check_contains "v2ray-json: grpc"      "$JSON_DE" "type=grpc"
+check_contains "v2ray-json: reality"   "$JSON_DE" "security=reality"
+check_contains "v2ray-json: pbk"       "$JSON_DE" "pbk=e4Vx7ENhom990GOG_B1aEUNfF4d09JEnWWc8ggszBdA"
+check_contains "v2ray-json: sid"       "$JSON_DE" "sid=0123abcd"
+check_contains "v2ray-json: sni"       "$JSON_DE" "sni=germany.example.top"
+check_contains "v2ray-json: serviceName" "$JSON_DE" "serviceName=abcdef0123456789"
+# flow в JSON пустая строка — она не должна превратиться в "&flow="
+check_not_contains "v2ray-json: пустой flow отброшен" "$JSON_DE" "flow="
+check_eq "v2ray-json: имя из remarks" "$(sub_find germany | cut -f3)" "🇩🇪 Германия"
+
+JSON_WS=$(sub_find cdn | cut -f4)
+check_contains "v2ray-json: ws"        "$JSON_WS" "type=ws"
+check_contains "v2ray-json: порт"      "$JSON_WS" ":8443"
+check_contains "v2ray-json: path"      "$JSON_WS" "path=%2Fapi%2Fv1%2Fassets"
+check_contains "v2ray-json: host-заголовок" "$JSON_WS" "host=cdn-edge.example.top"
+check_contains "v2ray-json: alpn"      "$JSON_WS" "alpn=http%2F1.1"
+
+# Ссылки должны доживать до рабочего конфига xray, а не только до парсера
+if command -v xray > /dev/null 2>&1; then
+    for pair in "json_de:$JSON_DE" "json_ws:$JSON_WS"; do
+        generate_xray_config "${pair#*:}" "$TMP_DIR/${pair%%:*}.json" 10804 10805 > /dev/null
+        TESTS_RUN=$((TESTS_RUN + 1))
+        if out=$(xray -test -c "$TMP_DIR/${pair%%:*}.json" 2>&1); then
+            pass "v2ray-json: xray -test принимает ${pair%%:*}"
+        else
+            fail "v2ray-json: xray -test принимает ${pair%%:*}" "$out"
+        fi
+    done
+else
+    echo "  – xray не установлен, проверка конфигов пропущена"
+fi
+
+echo ""
+echo "incy:// links:"
+
+# Векторы сгенерированы референсной реализацией (@incy/link-encoder) на
+# выдуманных URL, детерминированным IV — чтобы не плавали между прогонами.
+# Настоящую ссылку сюда класть нельзя: смысл схемы в том, что URL внутри личный.
+INCY_WITH_NAME="incy://crypt1/AAECAwQFBgcICQoLNyILfyzDvkxjhi4f5IvzN4iYpIMdfyifH2qNdsHETTdwtftXVw0e3scdKLWvAmLTRKed-C2RO_JfY6e8GS2M9raAy5XQkNv80e1qwRWaJKPIE0Nncw"
+INCY_NO_NAME="incy://crypt1/AAECAwQFBgcICQoLNyIQL3rDwRZqnyoD8pGKSLXP6o8NdSXQVSSALNrGWSIv9ulLWwFXhNBSYui3Uq0mCVYyphLCUymgkYzwGA"
+
+if ! command -v "${VPN_PYTHON:-python3}" > /dev/null 2>&1; then
+    echo "  (пропущено: python3 не найден)"
+else
+    INCY_PY="${VPN_PYTHON:-python3} $SCRIPT_DIR/incy_link.py"
+
+    check_eq "incy: url из ссылки с именем" \
+        "$($INCY_PY "$INCY_WITH_NAME" | cut -f1)" "https://sub.example.org/abc123token"
+    check_eq "incy: имя провайдера" \
+        "$($INCY_PY "$INCY_WITH_NAME" | cut -f2)" "Example VPN"
+    check_eq "incy: url без имени" \
+        "$($INCY_PY "$INCY_NO_NAME" | cut -f1)" "https://sub.example.org/plain"
+    check_eq "incy: имя пустое" \
+        "$($INCY_PY "$INCY_NO_NAME" | cut -f2)" ""
+    check_eq "incy: хвостовой слеш и пробелы" \
+        "$($INCY_PY "  $INCY_NO_NAME/" | cut -f1)" "https://sub.example.org/plain"
+
+    # Правим один символ base64 внутри шифротекста: база64 всё ещё валидна,
+    # но тег GCM больше не сходится. (Последний символ несёт только биты
+    # паддинга — его правка декодировалась бы в те же самые байты.)
+    INCY_HEAD="${INCY_NO_NAME:0:34}"
+    INCY_CHAR="${INCY_NO_NAME:34:1}"
+    [ "$INCY_CHAR" = "A" ] && INCY_CHAR="B" || INCY_CHAR="A"
+    INCY_BAD="${INCY_HEAD}${INCY_CHAR}${INCY_NO_NAME:35}"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if $INCY_PY "$INCY_BAD" > /dev/null 2>&1; then
+        fail "incy: подделанная ссылка отвергается"
+    else
+        pass "incy: подделанная ссылка отвергается"
+    fi
+
+    # Апстрим обещает ротацию ключа новой схемой, а старые оставляет рабочими,
+    # поэтому будущая схема должна читаться как "обнови клиент".
+    check_contains "incy: неизвестная схема названа по имени" \
+        "$($INCY_PY "incy://crypt2/AAECAwQFBgcICQoLDA" 2>&1)" "crypt2"
+
+    for junk in "incy://crypt1/" "incy://crypt1/AAEC" "https://example.org"; do
+        TESTS_RUN=$((TESTS_RUN + 1))
+        if $INCY_PY "$junk" > /dev/null 2>&1; then
+            fail "incy: мусор отвергается ($junk)"
+        else
+            pass "incy: мусор отвергается ($junk)"
+        fi
+    done
+fi
+
 # --- Итог ----------------------------------------------------------------
 
 echo ""

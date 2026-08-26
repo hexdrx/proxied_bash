@@ -5,6 +5,8 @@ vpn                     - Основной скрипт для запуска к
 vless_parser.sh         - Парсер VLESS URL
 vless_to_xray.sh        - Генератор конфигурации xray из VLESS
 subscription.sh         - Загрузка, кэш и поиск по подписке
+v2ray_json.py           - Подписки в формате v2ray-JSON -> vless:// ссылки
+incy_link.py            - Расшифровка incy:// deep-link'ов (AES-256-GCM)
 ss_parser.sh            - Парсер Outline/Shadowsocks (ss://) URL
 ss_to_outline.sh        - Менеджер локального outline-proxy
 outline-proxy/          - Go-хелпер (Outline-префикс) на базе outline-sdk
@@ -31,6 +33,7 @@ FILES.txt               - Этот файл (описание структуры
 
    Один из четырёх форматов:
      https://example.com/sub/vless/UUID   - подписка (выбор страны)
+     incy://crypt1/PAYLOAD               - подписка, спрятанная в deep-link
      vless://UUID@HOST:PORT?params#name   - одиночный VLESS
      ss://BASE64@HOST:PORT?params#name    - Outline / Shadowsocks
      IP:PORT:USER:PASS                    - HTTP-прокси
@@ -72,8 +75,23 @@ vless_to_xray.sh
 
 subscription.sh
 ---------------
-Скачивает подписку, декодирует base64, вытаскивает список
-серверов со слагами стран, кэширует его и ищет по нему.
+Скачивает подписку, декодирует тело (v2ray-JSON, base64 или
+plain text), вытаскивает список серверов со слагами стран,
+кэширует его и ищет по нему.
+
+v2ray_json.py
+-------------
+Превращает подписку в формате v2ray-JSON (массив целых
+Xray-конфигов, как у Remnawave) в список vless:// ссылок.
+Берёт только proxy-outbound; протоколы, которые vpn не тянет
+(hysteria, trojan), отбрасывает. Нужен python3, только stdlib.
+
+incy_link.py
+------------
+Разворачивает deep-link incy://crypt1/… в URL подписки и имя
+провайдера. Порт MIT-пакета @incy/link-encoder; AES-256-GCM
+реализован вручную, потому что openssl enc не работает с AEAD,
+а в stdlib питона AES нет. Нужен python3.
 
 ss_parser.sh
 ------------
@@ -158,6 +176,7 @@ INSTALL_RU.md
 
 - Linux/Unix система
 - bash
+- python3 (только для v2ray-JSON подписок и incy:// ссылок; stdlib, без pip)
 - sudo доступ для установки
 - Программы должны поддерживать HTTP_PROXY переменные окружения
 

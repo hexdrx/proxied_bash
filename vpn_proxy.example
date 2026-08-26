@@ -1,10 +1,16 @@
 # Первая непустая строка (не комментарий) — ваша конфигурация.
-# Поддерживаются четыре формата:
+# Поддерживаются четыре формата (у подписки есть ещё вариант-deep-link):
 
 # 1. Подписка — список серверов по странам, можно выбирать страну
-#    Формат: https://... (URL, отдающий список vless:// ссылок, обычно в base64)
+#    Формат: https://... (URL, отдающий список vless:// ссылок в base64,
+#            plain text или массивом Xray-конфигов — v2ray-JSON)
 #    Пример: https://cdn.example.com/sub/vless/12345678-1234-1234-1234-123456789abc
 #    Использование: vpn list / vpn use de / vpn -c jp curl ifconfig.me
+
+# 1a. Та же подписка, спрятанная в deep-link (нужен python3)
+#    Формат: incy://crypt1/PAYLOAD
+#    Пример: incy://crypt1/AAECAwQFBgcICQoLNyIQL3rDwRZqnyoD8pGK...
+#    URL подписки лежит внутри зашифрованным; vpn развернёт его сам.
 
 # 2. Одиночный VLESS сервер
 #    Формат: vless://UUID@HOST:PORT?params#name

@@ -74,6 +74,16 @@ if [ -f "/usr/local/bin/subscription.sh" ]; then
     echo "✓ Removed /usr/local/bin/subscription.sh"
 fi
 
+if [ -f "/usr/local/bin/v2ray_json.py" ]; then
+    rm -f /usr/local/bin/v2ray_json.py
+    echo "✓ Removed /usr/local/bin/v2ray_json.py"
+fi
+
+if [ -f "/usr/local/bin/incy_link.py" ]; then
+    rm -f /usr/local/bin/incy_link.py
+    echo "✓ Removed /usr/local/bin/incy_link.py"
+fi
+
 if [ -f "/usr/local/bin/ss_parser.sh" ]; then
     rm -f /usr/local/bin/ss_parser.sh
     echo "✓ Removed /usr/local/bin/ss_parser.sh"

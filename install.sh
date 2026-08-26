@@ -41,6 +41,20 @@ if [ -f "$SCRIPT_DIR/subscription.sh" ]; then
     echo "✓ Subscription support installed"
 fi
 
+# Хелперы на python3 (только stdlib): подписки в формате v2ray-JSON
+# и разбор incy:// deep-link'ов.
+if [ -f "$SCRIPT_DIR/v2ray_json.py" ]; then
+    cp "$SCRIPT_DIR/v2ray_json.py" /usr/local/bin/v2ray_json.py
+    chmod +x /usr/local/bin/v2ray_json.py
+    echo "✓ v2ray-JSON subscription helper installed"
+fi
+
+if [ -f "$SCRIPT_DIR/incy_link.py" ]; then
+    cp "$SCRIPT_DIR/incy_link.py" /usr/local/bin/incy_link.py
+    chmod +x /usr/local/bin/incy_link.py
+    echo "✓ incy:// link decoder installed"
+fi
+
 # Устанавливаем Outline/Shadowsocks support скрипты
 if [ -f "$SCRIPT_DIR/ss_parser.sh" ]; then
     cp "$SCRIPT_DIR/ss_parser.sh" /usr/local/bin/ss_parser.sh

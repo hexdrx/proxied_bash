@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT
 VLESS_SCRIPT="$SCRIPT_DIR/vless_to_xray.sh"
 SS_SCRIPT="$SCRIPT_DIR/ss_to_outline.sh"
 SUB_SCRIPT="$SCRIPT_DIR/subscription.sh"
+INCY_SCRIPT="$SCRIPT_DIR/incy_link.py"
+VPN_PYTHON="${VPN_PYTHON:-python3}"
 VPN_CACHE_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}"
 # С какого порта начинаем искать свободную пару для xray
 PORT_BASE=1080
@@ -32,6 +34,7 @@ Examples:
 
 Config (~/.vpn_proxy), первая значащая строка:
   https://example.com/sub/vless/UUID     подписка (выбор страны)
+  incy://crypt1/PAYLOAD                 подписка, спрятанная в deep-link
   vless://UUID@HOST:PORT?params#name     одиночный VLESS
   ss://BASE64@HOST:PORT?params#name      Outline / Shadowsocks
   IP:PORT:USER:PASS                      HTTP-прокси
@@ -194,7 +197,13 @@ cmd_update() {
     source "$SUB_SCRIPT"
     local count
     count=$(sub_fetch "$SUB_URL") || exit 1
-    echo "Subscription updated: $count servers"
+    # incy:// прячет URL подписки по замыслу, поэтому имя провайдера —
+    # единственное, что говорит, какая именно подписка обновилась.
+    if [ -n "$SUB_PROVIDER" ]; then
+        echo "Subscription updated: $count servers ($SUB_PROVIDER)"
+    else
+        echo "Subscription updated: $count servers"
+    fi
 }
 
 # --- Разбор аргументов ---
@@ -238,7 +247,16 @@ Create it with one of these formats:
 [ -n "$PROXY_DATA" ] || die "proxy file $PROXY_FILE is empty!"
 
 SUB_URL=""
-if [[ "$PROXY_DATA" =~ ^https?:// ]]; then
+SUB_PROVIDER=""
+if [[ "$PROXY_DATA" =~ ^incy:// ]]; then
+    # Ссылка прячет URL подписки — разворачиваем до всего остального,
+    # иначе ни одна ветка ниже её не опознает.
+    [ -f "$INCY_SCRIPT" ] || die "incy support script not found at $INCY_SCRIPT"
+    command -v "$VPN_PYTHON" >/dev/null 2>&1 || die "incy:// links need python3 (set VPN_PYTHON to override)"
+    incy_line=$("$VPN_PYTHON" "$INCY_SCRIPT" "$PROXY_DATA") || die "failed to decode the incy:// link in $PROXY_FILE"
+    SUB_URL="${incy_line%%$(printf '\t')*}"
+    SUB_PROVIDER="${incy_line#*$(printf '\t')}"
+elif [[ "$PROXY_DATA" =~ ^https?:// ]]; then
     SUB_URL="$PROXY_DATA"
 fi
 

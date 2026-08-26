@@ -14,6 +14,10 @@ if ! type vless_urldecode >/dev/null 2>&1; then
 fi
 
 VPN_CACHE_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}"
+# Хелпер для подписок в формате v2ray-JSON. Нужен python3 (только stdlib);
+# без него JSON-подписки просто не поддерживаются, остальное работает как прежде.
+VPN_PYTHON="${VPN_PYTHON:-python3}"
+_SUB_V2RAY_JSON="$_SUB_DIR/v2ray_json.py"
 VPN_SERVERS_FILE="$VPN_CACHE_DIR/servers.tsv"
 # Как часто перечитывать подписку, секунд (по умолчанию сутки)
 VPN_SUB_TTL="${VPN_SUB_TTL:-86400}"
@@ -59,9 +63,19 @@ _sub_file_age() {
     echo $((now - mtime))
 }
 
-# Декодирует тело подписки: base64 (в т.ч. url-safe/без паддинга) или plain text
+# Декодирует тело подписки: v2ray-JSON, base64 (в т.ч. url-safe/без
+# паддинга) или plain text
 _sub_decode() {
-    local raw="$1" compact padded
+    local raw="$1" compact padded links
+
+    # Часть панелей отдаёт не ссылки, а массив целых Xray-конфигов. Это надо
+    # распознать до всего остального: строк со ссылками там нет вовсе.
+    if [ -f "$_SUB_V2RAY_JSON" ] && command -v "$VPN_PYTHON" >/dev/null 2>&1; then
+        if links=$(printf %s "$raw" | "$VPN_PYTHON" "$_SUB_V2RAY_JSON" 2>/dev/null); then
+            printf '%s\n' "$links"
+            return 0
+        fi
+    fi
 
     # Уже готовый список — отдаём как есть
     if printf '%s' "$raw" | grep -q '^[[:space:]]*vless://'; then
@@ -104,7 +118,9 @@ sub_fetch() {
     tmp_raw="$VPN_CACHE_DIR/.sub.raw.$$"
     tmp_out="$VPN_CACHE_DIR/.servers.$$"
 
-    if ! curl -fsSL --max-time 30 "$url" -o "$tmp_raw" 2>/dev/null; then
+    # Панели отдают контент по User-Agent, а на curl'овский умолчательный
+    # отвечают 404 — представляемся своим именем.
+    if ! curl -fsSL --max-time 30 -A "vpn-proxied-bash" "$url" -o "$tmp_raw" 2>/dev/null; then
         rm -f "$tmp_raw"
         echo "Error: failed to download subscription from $url" >&2
         return 1

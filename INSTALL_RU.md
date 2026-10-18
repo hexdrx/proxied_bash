@@ -18,9 +18,15 @@ nano ~/.vpn_proxy
 
 ```
 https://example.com/sub/vless/UUID     # подписка (выбор страны)
-incy://crypt1/PAYLOAD                  # та же подписка в deep-link (нужен python3)
+incy://crypt1/PAYLOAD                  # подписка INCY, через официальный клиент
 vless://UUID@HOST:PORT?params#name     # одиночный VLESS сервер
 IP:PORT:USER:PASS                      # HTTP-прокси
+```
+
+Для `incy://` на Linux нужны пакеты (на macOS ничего не нужно):
+```bash
+sudo apt install xvfb bubblewrap unzip python3   # x11vnc — по желанию, для `vpn incy ui`
+vpn incy setup                                   # скачает INCY и импортирует ссылку
 ```
 
 Пример HTTP-прокси:

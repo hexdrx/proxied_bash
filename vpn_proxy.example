@@ -7,10 +7,13 @@
 #    Пример: https://cdn.example.com/sub/vless/12345678-1234-1234-1234-123456789abc
 #    Использование: vpn list / vpn use de / vpn -c jp curl ifconfig.me
 
-# 1a. Та же подписка, спрятанная в deep-link (нужен python3)
-#    Формат: incy://crypt1/PAYLOAD
+# 1a. Подписка INCY (deep-link) — через официальный клиент INCY
+#    Формат: incy://crypt1/PAYLOAD  (или любая другая incy:// ссылка импорта)
 #    Пример: incy://crypt1/AAECAwQFBgcICQoLNyIQL3rDwRZqnyoD8pGK...
-#    URL подписки лежит внутри зашифрованным; vpn развернёт его сам.
+#    Ссылку vpn не расшифровывает: её получает настоящий INCY, запущенный
+#    в изолированной коробке (Linux: нужны xvfb, bubblewrap, python3).
+#    Использование: vpn list / vpn use <сервер> / vpn incy ui
+#    happ:// ссылки не поддерживаются — провайдеры банят за расшифровку.
 
 # 2. Одиночный VLESS сервер
 #    Формат: vless://UUID@HOST:PORT?params#name

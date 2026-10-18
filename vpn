@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT
 VLESS_SCRIPT="$SCRIPT_DIR/vless_to_xray.sh"
 SS_SCRIPT="$SCRIPT_DIR/ss_to_outline.sh"
 SUB_SCRIPT="$SCRIPT_DIR/subscription.sh"
-INCY_SCRIPT="$SCRIPT_DIR/incy_link.py"
+INCY_BOX_SCRIPT="$SCRIPT_DIR/incy_box.sh"
 VPN_PYTHON="${VPN_PYTHON:-python3}"
 VPN_CACHE_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}"
 # С какого порта начинаем искать свободную пару для xray
@@ -20,11 +20,12 @@ usage() {
     cat <<'EOF'
 Usage:
   vpn [-c COUNTRY] <command> [args...]   запустить команду через прокси
-  vpn list                               список стран из подписки
+  vpn list                               список стран (серверов) из подписки
   vpn use <country>                      выбрать страну по умолчанию
   vpn status                             какие подключения запущены
-  vpn stop [country|all]                 остановить xray
+  vpn stop [country|incy|all]            остановить xray / INCY
   vpn update                             перечитать подписку
+  vpn incy setup|ui|hwid|log|restart     клиент INCY (подписка incy://)
 
 Examples:
   vpn curl ifconfig.me
@@ -34,7 +35,7 @@ Examples:
 
 Config (~/.vpn_proxy), первая значащая строка:
   https://example.com/sub/vless/UUID     подписка (выбор страны)
-  incy://crypt1/PAYLOAD                 подписка, спрятанная в deep-link
+  incy://crypt1/PAYLOAD                  подписка INCY, через официальный клиент
   vless://UUID@HOST:PORT?params#name     одиночный VLESS
   ss://BASE64@HOST:PORT?params#name      Outline / Shadowsocks
   IP:PORT:USER:PASS                      HTTP-прокси
@@ -117,6 +118,12 @@ ensure_xray() {
     echo "$http_port"
 }
 
+# Функции коробки INCY (incy_box.sh)
+require_incy() {
+    [ -f "$INCY_BOX_SCRIPT" ] || die "INCY support script not found at $INCY_BOX_SCRIPT"
+    source "$INCY_BOX_SCRIPT"
+}
+
 # Подписка загружена и актуальна
 require_subscription() {
     [ -f "$SUB_SCRIPT" ] || die "subscription support script not found at $SUB_SCRIPT"
@@ -125,6 +132,13 @@ require_subscription() {
 }
 
 cmd_list() {
+    if [ -n "$INCY_LINK" ]; then
+        require_incy
+        incy_ensure "$INCY_LINK" > /dev/null || exit 1
+        incy_list
+        return
+    fi
+
     require_subscription
     local current=""
     [ -f "$COUNTRY_FILE" ] && current=$(cat "$COUNTRY_FILE")
@@ -138,6 +152,14 @@ cmd_list() {
 cmd_use() {
     local query="$1"
     [ -n "$query" ] || die "usage: vpn use <country>   (see 'vpn list')"
+
+    if [ -n "$INCY_LINK" ]; then
+        # В INCY сервер один на всё — выбор запоминается в самом клиенте
+        require_incy
+        incy_ensure "$INCY_LINK" > /dev/null || exit 1
+        incy_use "$query" || exit 1
+        return
+    fi
 
     require_subscription
     local row
@@ -167,7 +189,15 @@ cmd_status() {
     done
     [ "$found" -eq 1 ] || echo "  no xray instances running"
 
-    if [ -f "$COUNTRY_FILE" ]; then
+    if [ -f "$INCY_BOX_SCRIPT" ]; then
+        source "$INCY_BOX_SCRIPT"
+        if [ -n "$INCY_LINK" ] || incy_installed; then
+            echo ""
+            incy_status
+        fi
+    fi
+
+    if [ -f "$COUNTRY_FILE" ] && [ -z "$INCY_LINK" ]; then
         echo ""
         echo "Default country: $(cat "$COUNTRY_FILE")"
     fi
@@ -175,6 +205,18 @@ cmd_status() {
 
 cmd_stop() {
     local target="${1:-all}" dir slug pid stopped=0
+
+    if { [ "$target" = "all" ] || [ "$target" = "incy" ]; } && [ -f "$INCY_BOX_SCRIPT" ]; then
+        source "$INCY_BOX_SCRIPT"
+        if incy_running; then
+            incy_stop
+            echo "Stopped INCY"
+            stopped=1
+        else
+            incy_stop   # добить Xvfb/VNC, если INCY уже упал
+        fi
+    fi
+
     for dir in "$VPN_CACHE_DIR"/*/; do
         [ -f "$dir/xray.pid" ] || continue
         slug=$(basename "$dir")
@@ -193,17 +235,53 @@ cmd_stop() {
 }
 
 cmd_update() {
+    if [ -n "$INCY_LINK" ]; then
+        # Подписку забирает сам INCY — со своими заголовками
+        require_incy
+        incy_ensure "$INCY_LINK" > /dev/null || exit 1
+        incy_update || exit 1
+        echo "Subscription updated by INCY. Servers:"
+        incy_list
+        return
+    fi
+
     [ -f "$SUB_SCRIPT" ] || die "subscription support script not found at $SUB_SCRIPT"
     source "$SUB_SCRIPT"
     local count
     count=$(sub_fetch "$SUB_URL") || exit 1
-    # incy:// прячет URL подписки по замыслу, поэтому имя провайдера —
-    # единственное, что говорит, какая именно подписка обновилась.
-    if [ -n "$SUB_PROVIDER" ]; then
-        echo "Subscription updated: $count servers ($SUB_PROVIDER)"
-    else
-        echo "Subscription updated: $count servers"
-    fi
+    echo "Subscription updated: $count servers"
+}
+
+# vpn incy <действие>: управление коробкой с клиентом INCY
+cmd_incy() {
+    local action="$1"
+    shift
+    require_incy
+    case "$action" in
+        setup)
+            [ -n "$INCY_LINK" ] || die "put your incy:// link into $PROXY_FILE first"
+            incy_ensure "$INCY_LINK" > /dev/null || exit 1
+            incy_status
+            ;;
+        ui)
+            if [ "$1" = "stop" ]; then
+                incy_vnc_stop
+                echo "VNC stopped"
+            else
+                incy_ui || exit 1
+            fi
+            ;;
+        hwid)    incy_hwid "$1" || exit 1 ;;
+        log)     incy_log "$1" ;;
+        restart) incy_restart || exit 1 ;;
+        reset)   incy_reset || exit 1 ;;
+        status)  incy_status ;;
+        stop)    incy_stop; echo "Stopped INCY" ;;
+        *)
+            echo "Usage: vpn incy {setup|ui [stop]|hwid [uuid]|log [lines]|restart|reset|status|stop}" >&2
+            exit 1
+            ;;
+    esac
 }
 
 # --- Разбор аргументов ---
@@ -240,6 +318,7 @@ fi
 PROXY_DATA=$(read_proxy_config) || die "proxy file $PROXY_FILE not found!
 Create it with one of these formats:
   Subscription: https://example.com/sub/vless/UUID
+  INCY:         incy://crypt1/PAYLOAD
   VLESS:        vless://UUID@HOST:PORT?params#name
   Outline/SS:   ss://BASE64USERINFO@host:993?outline=1&prefix=%17%03%03%3F#name
   HTTP Proxy:   IP:PORT:USER:PASS"
@@ -247,25 +326,27 @@ Create it with one of these formats:
 [ -n "$PROXY_DATA" ] || die "proxy file $PROXY_FILE is empty!"
 
 SUB_URL=""
-SUB_PROVIDER=""
+INCY_LINK=""
 if [[ "$PROXY_DATA" =~ ^incy:// ]]; then
-    # Ссылка прячет URL подписки — разворачиваем до всего остального,
-    # иначе ни одна ветка ниже её не опознает.
-    [ -f "$INCY_SCRIPT" ] || die "incy support script not found at $INCY_SCRIPT"
-    command -v "$VPN_PYTHON" >/dev/null 2>&1 || die "incy:// links need python3 (set VPN_PYTHON to override)"
-    incy_line=$("$VPN_PYTHON" "$INCY_SCRIPT" "$PROXY_DATA") || die "failed to decode the incy:// link in $PROXY_FILE"
-    SUB_URL="${incy_line%%$(printf '\t')*}"
-    SUB_PROVIDER="${incy_line#*$(printf '\t')}"
+    # Ссылку не расшифровываем: провайдеры банят за подписку, забранную не
+    # их клиентом. Её получает официальный INCY в коробке (incy_box.sh).
+    INCY_LINK="$PROXY_DATA"
+elif [[ "$PROXY_DATA" =~ ^happ:// ]]; then
+    die "happ:// links are not supported.
+Providers ban subscriptions fetched by anything but their own client, so vpn
+does not decode such links. Ask the provider for a plain https:// subscription
+or an incy:// link (INCY runs as the official client here)."
 elif [[ "$PROXY_DATA" =~ ^https?:// ]]; then
     SUB_URL="$PROXY_DATA"
 fi
 
-# --- Встроенные подкоманды (только в режиме подписки) ---
+# --- Встроенные подкоманды (подписка или INCY) ---
 
 case "$1" in
-    list|use|status|stop|update)
-        if [ -z "$SUB_URL" ] && [ "$1" != "status" ] && [ "$1" != "stop" ]; then
-            die "'$1' requires a subscription URL in $PROXY_FILE"
+    list|use|status|stop|update|incy)
+        if [ -z "$SUB_URL" ] && [ -z "$INCY_LINK" ] && \
+           [ "$1" != "status" ] && [ "$1" != "stop" ] && [ "$1" != "incy" ]; then
+            die "'$1' requires a subscription URL or an incy:// link in $PROXY_FILE"
         fi
         subcommand="$1"
         shift
@@ -275,6 +356,7 @@ case "$1" in
             status) cmd_status ;;
             stop)   cmd_stop "$1" ;;
             update) cmd_update ;;
+            incy)   cmd_incy "$@" ;;
         esac
         exit $?
         ;;
@@ -284,7 +366,14 @@ esac
 
 # --- Определяем прокси ---
 
-if [ -n "$SUB_URL" ]; then
+if [ -n "$INCY_LINK" ]; then
+    # Официальный INCY в коробке держит mixed-порт (HTTP + SOCKS5) с паролем
+    [ -n "$COUNTRY" ] && die "-c does not work with INCY: it keeps one server at a time.
+Switch it with 'vpn use <server>' (see 'vpn list')"
+    require_incy
+    PROXY_URL=$(incy_ensure "$INCY_LINK") || exit 1
+
+elif [ -n "$SUB_URL" ]; then
     # Режим подписки: выбираем страну и поднимаем для неё xray
     require_subscription
 

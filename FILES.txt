@@ -6,12 +6,14 @@ vless_parser.sh         - Парсер VLESS URL
 vless_to_xray.sh        - Генератор конфигурации xray из VLESS
 subscription.sh         - Загрузка, кэш и поиск по подписке
 v2ray_json.py           - Подписки в формате v2ray-JSON -> vless:// ссылки
-incy_link.py            - Расшифровка incy:// deep-link'ов (AES-256-GCM)
+incy_box.sh             - Официальный клиент INCY в изолированной коробке
+incy_state.py           - Чтение/правка настроек и базы INCY для коробки
 ss_parser.sh            - Парсер Outline/Shadowsocks (ss://) URL
 ss_to_outline.sh        - Менеджер локального outline-proxy
 outline-proxy/          - Go-хелпер (Outline-префикс) на базе outline-sdk
 test_vless.sh           - Тесты парсера, конфигов и подписки
 test_ss.sh              - Тесты парсера ss:// URL
+test_incy.sh            - Тесты коробки INCY (INCY_E2E=1 — с настоящим клиентом)
 vpn_proxy.example       - Пример файла конфигурации прокси
 install.sh              - Скрипт автоматической установки
 uninstall.sh            - Скрипт удаления
@@ -33,7 +35,7 @@ FILES.txt               - Этот файл (описание структуры
 
    Один из четырёх форматов:
      https://example.com/sub/vless/UUID   - подписка (выбор страны)
-     incy://crypt1/PAYLOAD               - подписка, спрятанная в deep-link
+     incy://crypt1/PAYLOAD                - подписка INCY (через официальный клиент)
      vless://UUID@HOST:PORT?params#name   - одиночный VLESS
      ss://BASE64@HOST:PORT?params#name    - Outline / Shadowsocks
      IP:PORT:USER:PASS                    - HTTP-прокси
@@ -58,9 +60,10 @@ Bash-скрипт который:
 - Определяет режим: подписка, VLESS, Outline/ss:// или HTTP-прокси
 - Поднимает xray под нужную страну (для VLESS и подписки)
 - Поднимает outline-proxy (для ss://)
+- Поднимает коробку с клиентом INCY (для incy://)
 - Устанавливает переменные HTTP_PROXY и HTTPS_PROXY
 - Запускает переданную команду
-Подкоманды: list, use, status, stop, update
+Подкоманды: list, use, status, stop, update, incy
 
 vless_parser.sh
 ---------------
@@ -86,12 +89,21 @@ Xray-конфигов, как у Remnawave) в список vless:// ссыло�
 Берёт только proxy-outbound; протоколы, которые vpn не тянет
 (hysteria, trojan), отбрасывает. Нужен python3, только stdlib.
 
-incy_link.py
-------------
-Разворачивает deep-link incy://crypt1/… в URL подписки и имя
-провайдера. Порт MIT-пакета @incy/link-encoder; AES-256-GCM
-реализован вручную, потому что openssl enc не работает с AEAD,
-а в stdlib питона AES нет. Нужен python3.
+incy_box.sh
+-----------
+Ставит официальный клиент INCY (portable zip / dmg, sha256
+проверяется) в ~/.local/share/vpn/incy и держит его в фоне в
+режиме PROXY_ONLY. Изоляция: свой домашний каталог INCY,
+заглушки вместо networksetup/gsettings/xdg-mime, на Linux —
+Xvfb и bubblewrap. Импортирует incy:// ссылку, выбирает сервер,
+отдаёт vpn адрес локального mixed-порта с паролем.
+
+incy_state.py
+-------------
+Читает preferences.json, incy.db и xray_config.json клиента
+INCY: список серверов, выбор сервера, адрес порта, фиксация
+HWID (vpn incy hwid). Только stdlib; параметры через
+переменные окружения.
 
 ss_parser.sh
 ------------
@@ -177,6 +189,7 @@ INSTALL_RU.md
 - Linux/Unix система
 - bash
 - python3 (только для v2ray-JSON подписок и incy:// ссылок; stdlib, без pip)
+- для incy:// на Linux: xvfb, bubblewrap, unzip (x11vnc — для `vpn incy ui`)
 - sudo доступ для установки
 - Программы должны поддерживать HTTP_PROXY переменные окружения
 

@@ -239,61 +239,6 @@ else
     echo "  – xray не установлен, проверка конфигов пропущена"
 fi
 
-echo ""
-echo "incy:// links:"
-
-# Векторы сгенерированы референсной реализацией (@incy/link-encoder) на
-# выдуманных URL, детерминированным IV — чтобы не плавали между прогонами.
-# Настоящую ссылку сюда класть нельзя: смысл схемы в том, что URL внутри личный.
-INCY_WITH_NAME="incy://crypt1/AAECAwQFBgcICQoLNyILfyzDvkxjhi4f5IvzN4iYpIMdfyifH2qNdsHETTdwtftXVw0e3scdKLWvAmLTRKed-C2RO_JfY6e8GS2M9raAy5XQkNv80e1qwRWaJKPIE0Nncw"
-INCY_NO_NAME="incy://crypt1/AAECAwQFBgcICQoLNyIQL3rDwRZqnyoD8pGKSLXP6o8NdSXQVSSALNrGWSIv9ulLWwFXhNBSYui3Uq0mCVYyphLCUymgkYzwGA"
-
-if ! command -v "${VPN_PYTHON:-python3}" > /dev/null 2>&1; then
-    echo "  (пропущено: python3 не найден)"
-else
-    INCY_PY="${VPN_PYTHON:-python3} $SCRIPT_DIR/incy_link.py"
-
-    check_eq "incy: url из ссылки с именем" \
-        "$($INCY_PY "$INCY_WITH_NAME" | cut -f1)" "https://sub.example.org/abc123token"
-    check_eq "incy: имя провайдера" \
-        "$($INCY_PY "$INCY_WITH_NAME" | cut -f2)" "Example VPN"
-    check_eq "incy: url без имени" \
-        "$($INCY_PY "$INCY_NO_NAME" | cut -f1)" "https://sub.example.org/plain"
-    check_eq "incy: имя пустое" \
-        "$($INCY_PY "$INCY_NO_NAME" | cut -f2)" ""
-    check_eq "incy: хвостовой слеш и пробелы" \
-        "$($INCY_PY "  $INCY_NO_NAME/" | cut -f1)" "https://sub.example.org/plain"
-
-    # Правим один символ base64 внутри шифротекста: база64 всё ещё валидна,
-    # но тег GCM больше не сходится. (Последний символ несёт только биты
-    # паддинга — его правка декодировалась бы в те же самые байты.)
-    INCY_HEAD="${INCY_NO_NAME:0:34}"
-    INCY_CHAR="${INCY_NO_NAME:34:1}"
-    [ "$INCY_CHAR" = "A" ] && INCY_CHAR="B" || INCY_CHAR="A"
-    INCY_BAD="${INCY_HEAD}${INCY_CHAR}${INCY_NO_NAME:35}"
-
-    TESTS_RUN=$((TESTS_RUN + 1))
-    if $INCY_PY "$INCY_BAD" > /dev/null 2>&1; then
-        fail "incy: подделанная ссылка отвергается"
-    else
-        pass "incy: подделанная ссылка отвергается"
-    fi
-
-    # Апстрим обещает ротацию ключа новой схемой, а старые оставляет рабочими,
-    # поэтому будущая схема должна читаться как "обнови клиент".
-    check_contains "incy: неизвестная схема названа по имени" \
-        "$($INCY_PY "incy://crypt2/AAECAwQFBgcICQoLDA" 2>&1)" "crypt2"
-
-    for junk in "incy://crypt1/" "incy://crypt1/AAEC" "https://example.org"; do
-        TESTS_RUN=$((TESTS_RUN + 1))
-        if $INCY_PY "$junk" > /dev/null 2>&1; then
-            fail "incy: мусор отвергается ($junk)"
-        else
-            pass "incy: мусор отвергается ($junk)"
-        fi
-    done
-fi
-
 # --- Итог ----------------------------------------------------------------
 
 echo ""

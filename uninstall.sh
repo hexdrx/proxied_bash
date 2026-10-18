@@ -50,6 +50,14 @@ if [ -f "/tmp/outline_vpn.pid" ]; then
 fi
 rm -f /tmp/outline_vpn.log
 
+# Коробка INCY: останавливаем от имени пользователя, чьи это процессы
+INCY_BOX="/usr/local/bin/incy_box.sh"
+INCY_DIR="${XDG_DATA_HOME:-$REAL_HOME/.local/share}/vpn/incy"
+if [ -f "$INCY_BOX" ]; then
+    echo "Stopping INCY box if running..."
+    sudo -H -u "$REAL_USER" bash -c "source '$INCY_BOX' && incy_stop" 2>/dev/null
+fi
+
 echo ""
 echo "Removing vpn scripts from /usr/local/bin..."
 if [ -f "/usr/local/bin/vpn" ]; then
@@ -79,10 +87,12 @@ if [ -f "/usr/local/bin/v2ray_json.py" ]; then
     echo "✓ Removed /usr/local/bin/v2ray_json.py"
 fi
 
-if [ -f "/usr/local/bin/incy_link.py" ]; then
-    rm -f /usr/local/bin/incy_link.py
-    echo "✓ Removed /usr/local/bin/incy_link.py"
-fi
+for f in incy_box.sh incy_state.py incy_link.py; do
+    if [ -f "/usr/local/bin/$f" ]; then
+        rm -f "/usr/local/bin/$f"
+        echo "✓ Removed /usr/local/bin/$f"
+    fi
+done
 
 if [ -f "/usr/local/bin/ss_parser.sh" ]; then
     rm -f /usr/local/bin/ss_parser.sh
@@ -139,6 +149,19 @@ if [[ "$response3" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     echo "✓ Removed subscription cache and selected country"
 else
     echo "Keeping subscription cache"
+fi
+
+if [ -d "$INCY_DIR" ]; then
+    echo ""
+    echo "Do you want to remove the INCY client and its data $INCY_DIR? (y/N)"
+    read -r response4
+
+    if [[ "$response4" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        rm -rf "$INCY_DIR"
+        echo "✓ Removed INCY box"
+    else
+        echo "Keeping INCY box"
+    fi
 fi
 
 echo ""

@@ -41,18 +41,26 @@ if [ -f "$SCRIPT_DIR/subscription.sh" ]; then
     echo "✓ Subscription support installed"
 fi
 
-# Хелперы на python3 (только stdlib): подписки в формате v2ray-JSON
-# и разбор incy:// deep-link'ов.
+# Хелпер на python3 (только stdlib): подписки в формате v2ray-JSON
 if [ -f "$SCRIPT_DIR/v2ray_json.py" ]; then
     cp "$SCRIPT_DIR/v2ray_json.py" /usr/local/bin/v2ray_json.py
     chmod +x /usr/local/bin/v2ray_json.py
     echo "✓ v2ray-JSON subscription helper installed"
 fi
 
-if [ -f "$SCRIPT_DIR/incy_link.py" ]; then
-    cp "$SCRIPT_DIR/incy_link.py" /usr/local/bin/incy_link.py
-    chmod +x /usr/local/bin/incy_link.py
-    echo "✓ incy:// link decoder installed"
+# Коробка с официальным клиентом INCY для incy:// ссылок.
+# Сам клиент (~160 МБ) скачивается при первом запуске, в домашний каталог.
+if [ -f "$SCRIPT_DIR/incy_box.sh" ] && [ -f "$SCRIPT_DIR/incy_state.py" ]; then
+    cp "$SCRIPT_DIR/incy_box.sh" /usr/local/bin/incy_box.sh
+    cp "$SCRIPT_DIR/incy_state.py" /usr/local/bin/incy_state.py
+    chmod +x /usr/local/bin/incy_box.sh /usr/local/bin/incy_state.py
+    echo "✓ INCY box installed (client is downloaded on first use)"
+fi
+
+# Старый расшифровщик incy:// убран: провайдеры банят за такие подписки
+if [ -f /usr/local/bin/incy_link.py ]; then
+    rm -f /usr/local/bin/incy_link.py
+    echo "✓ Removed obsolete incy_link.py"
 fi
 
 # Устанавливаем Outline/Shadowsocks support скрипты
@@ -129,6 +137,7 @@ if [ -f "$SCRIPT_DIR/vpn_proxy.example" ] && [ ! -f "$REAL_HOME/.vpn_proxy" ]; t
     echo "⚠️  IMPORTANT: Edit ~/.vpn_proxy with your proxy details!"
     echo "   Supported formats:"
     echo "     Subscription: https://example.com/sub/vless/UUID"
+    echo "     INCY: incy://crypt1/PAYLOAD"
     echo "     VLESS: vless://UUID@HOST:PORT?params#name"
     echo "     Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
     echo "     HTTP Proxy: IP:PORT:USER:PASS"
@@ -158,6 +167,7 @@ echo "     nano ~/.vpn_proxy"
 echo ""
 echo "     Supported formats:"
 echo "       Subscription: https://example.com/sub/vless/UUID"
+echo "       INCY: incy://crypt1/PAYLOAD"
 echo "       VLESS: vless://UUID@HOST:PORT?params#name"
 echo "       Outline/Shadowsocks: ss://BASE64@HOST:PORT?params#name"
 echo "       HTTP: IP:PORT:USER:PASS"
@@ -177,6 +187,10 @@ echo "     https://github.com/XTLS/Xray-core"
 echo ""
 echo "  5. For Outline (ss://): the outline-proxy helper is installed from a"
 echo "     prebuilt binary, or built from source if Go is available"
+echo ""
+echo "  6. For INCY (incy://): the official client runs isolated in the background."
+echo "     Linux needs: sudo apt install xvfb bubblewrap unzip   (x11vnc for 'vpn incy ui')"
+echo "     macOS needs nothing extra. Then: vpn incy setup"
 echo ""
 echo "To uninstall:"
 echo "  sudo ./uninstall.sh"

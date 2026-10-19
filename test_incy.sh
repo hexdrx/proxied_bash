@@ -163,7 +163,20 @@ state mark-stale
 check_eq "mark-stale" "$(state last-updated)" "0"
 
 check_eq "endpoint" "$(state endpoint)" "$(printf '18808\tmixed\tincy_ab12')"
-check_eq "proxy-url: пароль экранирован" "$(state proxy-url)" "http://incy_ab12:p%40ss%3Aw%2Frd@127.0.0.1:18808"
+check_eq "proxy-url: mixed -> http, пароль экранирован" "$(state proxy-url)" "http://incy_ab12:p%40ss%3Aw%2Frd@127.0.0.1:18808"
+
+# socks-вход (полные конфиги провайдеров, напр. LEDOKOL) -> socks5h://
+XRAY_FILE="$FIX_HOME/.cache/incy/xray_config.json"
+cat > "$XRAY_FILE" <<'EOF'
+{"inbounds":[{"protocol":"dokodemo-door","port":10813,"listen":"127.0.0.1","tag":"api"},
+ {"protocol":"socks","port":10808,"listen":"127.0.0.1","settings":{"auth":"noauth"}}]}
+EOF
+check_eq "proxy-url: socks без auth -> socks5h" "$(state proxy-url)" "socks5h://127.0.0.1:10808"
+check_eq "endpoint: socks" "$(state endpoint)" "$(printf '10808\tsocks\t')"
+cat > "$XRAY_FILE" <<'EOF'
+{"inbounds":[{"protocol":"socks","port":10808,"listen":"127.0.0.1","settings":{"auth":"password","accounts":[{"user":"u1","pass":"p@s/s"}]}}]}
+EOF
+check_eq "proxy-url: socks с auth экранирован" "$(state proxy-url)" "socks5h://u1:p%40s%2Fs@127.0.0.1:10808"
 
 # HWID: фиксация и чтение
 state_hwid() { INCY_ACTION="$1" INCY_HOME="$FIX_HOME" INCY_OS=linux INCY_HWID="$2" "$PYTHON" -I "$SCRIPT_DIR/incy_state.py"; }

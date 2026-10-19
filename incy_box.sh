@@ -32,10 +32,14 @@ INCY_VERSION="${VPN_INCY_VERSION:-3.8.8}"
 INCY_RELEASES="https://github.com/INCY-DEV/incy-platforms/releases/download"
 INCY_DIR="${VPN_INCY_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vpn/incy}"
 INCY_RUN_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}/incy-box"
-INCY_PORT="${VPN_INCY_PORT:-18808}"           # не 10808: его занимают v2rayN, обычный INCY
-# INCY 3.8.8 проверяет готовность xray TCP-подключением к 10808, какой бы
-# socksPort ни стоял в настройках, и через 20 с без ответа гасит xray.
-# На время подключения коробка держит на этом порту пустышку.
+# INCY 3.8.8 проверяет готовность xray TCP-подключением именно к 10808 (какой бы
+# socksPort ни стоял) и через 20 с без ответа гасит xray. Поэтому по умолчанию и
+# держим локальный порт = 10808: тогда INCY сам себе отвечает на проверку, а
+# «полные» конфиги провайдеров (LEDOKOL и т.п.), жёстко прошитые на 10808,
+# работают без конфликтов. Если 10808 уже занят другим клиентом — задай
+# VPN_INCY_PORT=<свободный>; для обычных подписок проверку закроет пустышка ниже
+# (но провайдерский full-config, прошитый на 10808, на другом порту не поедет).
+INCY_PORT="${VPN_INCY_PORT:-10808}"
 INCY_PROBE_PORT=10808
 INCY_SANDBOX="${VPN_INCY_SANDBOX:-auto}"      # auto | on | off (только Linux)
 INCY_HWID="${VPN_INCY_HWID:-}"                # зафиксированный HWID (пусто — по машине)

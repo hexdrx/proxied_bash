@@ -327,14 +327,19 @@ def endpoint():
 
 
 def proxy_url():
-    """URL для http_proxy/https_proxy. Пароль внутри: печатается только в vpn."""
+    """URL для http_proxy/https_proxy/all_proxy. Пароль внутри: печатается только в vpn.
+
+    mixed-вход (свой конфиг INCY) отдаём как http:// — работает для всех
+    инструментов. socks-вход (встречается в «полных» конфигах провайдера,
+    напр. LEDOKOL) — как socks5h://: curl/git понимают его в этих же
+    переменных, а DNS резолвится на стороне прокси (h = hostname).
+    """
     port, user, password, protocol = local_inbound()
-    if protocol != "mixed":
-        raise StateError("INCY exposes a %s inbound, HTTP proxy needs 'mixed'" % protocol)
     auth = ""
     if user:
         auth = "%s:%s@" % (quote(user, safe=""), quote(password, safe=""))
-    print("http://%s127.0.0.1:%s" % (auth, port))
+    scheme = "http" if protocol == "mixed" else "socks5h"
+    print("%s://%s127.0.0.1:%s" % (scheme, auth, port))
 
 
 def paths():

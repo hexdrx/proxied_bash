@@ -32,6 +32,7 @@ INCY_OS = os.environ.get("INCY_OS", "linux")        # linux|darwin
 INCY_PORT = os.environ.get("INCY_PORT", "18808")    # локальный mixed-порт
 INCY_QUERY = os.environ.get("INCY_QUERY", "")       # номер / имя сервера для select
 INCY_HWID = os.environ.get("INCY_HWID", "")         # зафиксированный HWID (пусто — не трогать)
+INCY_HTTP_PORT = os.environ.get("INCY_HTTP_PORT", "10809")  # порт http→socks мостика
 INCY_STUB_PORT = int(os.environ.get("INCY_STUB_PORT", "10808"))
 INCY_STUB_LIFETIME = float(os.environ.get("INCY_STUB_LIFETIME", "120"))
 INCY_STUB_LINGER = 2.0    # сколько ещё держать порт после первой проверки INCY
@@ -342,6 +343,35 @@ def proxy_url():
     print("%s://%s127.0.0.1:%s" % (scheme, auth, port))
 
 
+def bridge_config():
+    """Печатает xray-конфиг http→socks мостика для socks-входа INCY.
+
+    http-инбаунд на INCY_HTTP_PORT → socks-аутбаунд на локальный вход INCY.
+    Нужен клиентам, которые не умеют socks-прокси (Node/undici: Claude Code и
+    т.п.). Для mixed-входа мостик не нужен — тогда ошибка.
+    """
+    port, user, password, protocol = local_inbound()
+    if protocol != "socks":
+        raise StateError("bridge is only for a socks inbound (got %s)" % protocol)
+    server = {"address": "127.0.0.1", "port": port}
+    if user:
+        server["users"] = [{"user": user, "pass": password}]
+    cfg = {
+        "log": {"loglevel": "warning"},
+        "inbounds": [{
+            "listen": "127.0.0.1",
+            "port": int(INCY_HTTP_PORT),
+            "protocol": "http",
+            "settings": {},
+        }],
+        "outbounds": [{
+            "protocol": "socks",
+            "settings": {"servers": [server]},
+        }],
+    }
+    print(json.dumps(cfg))
+
+
 def paths():
     for kind in ("prefs", "db", "xray"):
         print("%s\t%s" % (kind, path_of(kind)))
@@ -389,6 +419,7 @@ ACTIONS = {
     "mark-stale": mark_stale,
     "endpoint": endpoint,
     "proxy-url": proxy_url,
+    "bridge-config": bridge_config,
     "paths": paths,
     "probe-stub": probe_stub,
     "hwid": hwid_cmd,

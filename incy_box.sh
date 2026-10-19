@@ -41,6 +41,11 @@ INCY_RUN_DIR="${VPN_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/vpn}/incy-box"
 # (но провайдерский full-config, прошитый на 10808, на другом порту не поедет).
 INCY_PORT="${VPN_INCY_PORT:-10808}"
 INCY_PROBE_PORT=10808
+# Если вход INCY — SOCKS (бывает у «полных» конфигов провайдеров, напр. LEDOKOL),
+# curl/git понимают socks5h://, а клиенты на Node/undici (Claude Code и др.) — нет
+# (unsupportedProxyProtocol). Поэтому в таком случае коробка поднимает локальный
+# http→socks мостик на этом порту и отдаёт всем обычный http://-прокси.
+INCY_HTTP_PORT="${VPN_INCY_HTTP_PORT:-$((INCY_PORT + 1))}"
 INCY_SANDBOX="${VPN_INCY_SANDBOX:-auto}"      # auto | on | off (только Linux)
 INCY_HWID="${VPN_INCY_HWID:-}"                # зафиксированный HWID (пусто — по машине)
 INCY_PYTHON="${VPN_PYTHON:-python3}"
@@ -63,6 +68,8 @@ INCY_XVFB_PID_FILE="$INCY_RUN_DIR/xvfb.pid"
 INCY_XVFB_DISPLAY_FILE="$INCY_RUN_DIR/xvfb.display"
 INCY_VNC_PID_FILE="$INCY_RUN_DIR/vnc.pid"
 INCY_STUB_PID_FILE="$INCY_RUN_DIR/probe-stub.pid"
+INCY_BRIDGE_PID_FILE="$INCY_RUN_DIR/http-bridge.pid"
+INCY_BRIDGE_CFG="$INCY_RUN_DIR/http-bridge.json"
 INCY_LOCK_DIR="$INCY_RUN_DIR/lock"
 
 # Утилиты, через которые INCY лезет в систему. В коробке все — заглушки.
@@ -230,6 +237,7 @@ incy_state() {
     [ -f "$INCY_STATE_PY" ] || { incy_err "incy_state.py not found at $INCY_STATE_PY"; return 1; }
     INCY_ACTION="$action" INCY_HOME="$INCY_HOME_DIR" INCY_OS="$(incy_os)" \
         INCY_PORT="$INCY_PORT" INCY_QUERY="$query" INCY_HWID="$hwid" \
+        INCY_HTTP_PORT="$INCY_HTTP_PORT" \
         "$INCY_PYTHON" -I "$INCY_STATE_PY"
 }
 
@@ -430,6 +438,63 @@ incy_stub_stop() {
     rm -f "$INCY_STUB_PID_FILE"
 }
 
+# --- http→socks мостик (для socks-входа INCY) -------------------------------
+
+# Путь к xray: отдельный бинарь рядом не кладём, берём тот, что в составе INCY.
+incy_xray_bin() {
+    command -v xray 2>/dev/null && return 0
+    local bin
+    bin="$(find -L "$INCY_APP_DIR" -type f -name xray 2>/dev/null | head -1)"
+    [ -n "$bin" ] && { echo "$bin"; return 0; }
+    return 1
+}
+
+# Поднимает http→socks мостик, если его ещё нет. Возвращает 0, когда мостик готов.
+incy_bridge_start() {
+    local xray i
+    if incy_pid_alive "$INCY_BRIDGE_PID_FILE" && incy_port_open "$INCY_HTTP_PORT"; then
+        return 0
+    fi
+    incy_bridge_stop
+    if incy_port_open "$INCY_HTTP_PORT"; then
+        incy_err "http bridge port $INCY_HTTP_PORT is busy (set VPN_INCY_HTTP_PORT)"
+        return 1
+    fi
+    xray="$(incy_xray_bin)" || { incy_err "xray binary not found for the http bridge"; return 1; }
+    incy_state bridge-config > "$INCY_BRIDGE_CFG" || return 1
+
+    incy_detach_cmd
+    "${INCY_DETACH[@]}" "$xray" run -c "$INCY_BRIDGE_CFG" \
+        < /dev/null > "$INCY_RUN_DIR/http-bridge.log" 2>&1 &
+    echo $! > "$INCY_BRIDGE_PID_FILE"
+
+    for i in $(seq 1 40); do
+        incy_pid_alive "$INCY_BRIDGE_PID_FILE" || { tail -n 10 "$INCY_RUN_DIR/http-bridge.log" >&2; incy_err "http bridge exited"; return 1; }
+        incy_port_open "$INCY_HTTP_PORT" && return 0
+        sleep 0.25
+    done
+    incy_err "http bridge did not come up on $INCY_HTTP_PORT"
+}
+
+incy_bridge_stop() {
+    incy_pid_alive "$INCY_BRIDGE_PID_FILE" && incy_kill_group "$(cat "$INCY_BRIDGE_PID_FILE")"
+    rm -f "$INCY_BRIDGE_PID_FILE"
+}
+
+# Печатает прокси-URL, который коробка отдаёт наружу. Для mixed-входа — http://
+# напрямую; для socks-входа поднимает мостик и отдаёт http:// на него (чтобы
+# работали и curl, и Node-клиенты вроде Claude Code).
+incy_proxy_url() {
+    local proto
+    proto="$(incy_state endpoint | cut -f2)"
+    if [ "$proto" = "socks" ]; then
+        incy_bridge_start || return 1
+        echo "http://127.0.0.1:$INCY_HTTP_PORT"
+    else
+        incy_state proxy-url
+    fi
+}
+
 incy_make_shims() {
     local tool
     mkdir -p "$INCY_SHIM_DIR" || return 1
@@ -548,6 +613,7 @@ incy_stop() {
     fi
     rm -f "$INCY_PID_FILE"
     incy_stub_stop
+    incy_bridge_stop
     if [ "$1" != "--keep-display" ]; then
         incy_vnc_stop
         incy_xvfb_stop
@@ -625,7 +691,7 @@ incy_ensure() {
     } || rc=1
     incy_unlock
     [ "$rc" -eq 0 ] || return 1
-    incy_state proxy-url
+    incy_proxy_url
 }
 
 incy_restart() {
@@ -695,6 +761,9 @@ incy_status() {
         read -r port proto user <<< "$(incy_state endpoint 2>/dev/null)"
         server="$(incy_state current 2>/dev/null)"
         echo "  INCY $INCY_VERSION  running (PID $(cat "$INCY_PID_FILE"))  ${proto:-mixed}=127.0.0.1:${port:-$INCY_PORT}  user=${user:-?}"
+        if [ "$proto" = "socks" ] && incy_pid_alive "$INCY_BRIDGE_PID_FILE"; then
+            echo "  http bridge (for Node/curl/git): http://127.0.0.1:$INCY_HTTP_PORT"
+        fi
         echo "  server: ${server:-?}   sandbox: $sandbox"
     else
         echo "  INCY $INCY_VERSION  not running   sandbox: $sandbox"

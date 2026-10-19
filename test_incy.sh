@@ -178,6 +178,25 @@ cat > "$XRAY_FILE" <<'EOF'
 EOF
 check_eq "proxy-url: socks с auth экранирован" "$(state proxy-url)" "socks5h://u1:p%40s%2Fs@127.0.0.1:10808"
 
+# http->socks мостик: конфиг xray для клиентов, не умеющих socks (Claude Code)
+cat > "$XRAY_FILE" <<'EOF'
+{"inbounds":[{"protocol":"socks","port":10808,"listen":"127.0.0.1","settings":{"auth":"noauth"}}]}
+EOF
+BRIDGE="$(INCY_ACTION=bridge-config INCY_HOME="$FIX_HOME" INCY_OS=linux INCY_HTTP_PORT=10809 "$PYTHON" -I "$SCRIPT_DIR/incy_state.py")"
+check_contains "bridge: http-инбаунд на мост-порту" "$BRIDGE" '"port": 10809'
+check_contains "bridge: протокол http"              "$BRIDGE" '"protocol": "http"'
+check_contains "bridge: socks-аутбаунд на вход INCY" "$BRIDGE" '"port": 10808'
+INCY_ACTION=bridge-config INCY_HOME="$FIX_HOME" INCY_OS=linux "$PYTHON" -I "$SCRIPT_DIR/incy_state.py" > /dev/null 2>&1 \
+    && echo "$BRIDGE" | "$PYTHON" -c 'import json,sys; json.load(sys.stdin)' \
+    && pass "bridge: валидный JSON" || fail "bridge: валидный JSON"
+TESTS_RUN=$((TESTS_RUN + 1))
+# для mixed-входа мостик не нужен — ошибка
+cat > "$XRAY_FILE" <<'EOF'
+{"inbounds":[{"protocol":"mixed","port":10808,"listen":"127.0.0.1","settings":{"accounts":[{"user":"u","pass":"p"}]}}]}
+EOF
+INCY_ACTION=bridge-config INCY_HOME="$FIX_HOME" INCY_OS=linux "$PYTHON" -I "$SCRIPT_DIR/incy_state.py" > /dev/null 2>&1
+check_fails "bridge: для mixed-входа отказ" $?
+
 # HWID: фиксация и чтение
 state_hwid() { INCY_ACTION="$1" INCY_HOME="$FIX_HOME" INCY_OS=linux INCY_HWID="$2" "$PYTHON" -I "$SCRIPT_DIR/incy_state.py"; }
 check_eq "hwid: пусто, пока не задан" "$(state_hwid hwid)" ""

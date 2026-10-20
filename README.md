@@ -273,9 +273,20 @@ vpn incy hwid 1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D
 - macOS: обычный запуск свёрнутым, без иконки в доке; песочницы нет
   (`sandbox-exec` устарел и с JVM работает плохо).
 
-Зависимости: python3; на Linux ещё `xvfb`, `bubblewrap`, `unzip`, для `vpn incy
-ui` — `x11vnc`. На macOS ничего ставить не нужно. Клиент — JVM-приложение,
-в фоне занимает около 300 МБ памяти (на Linux плюс ~60 МБ Xvfb).
+Зависимости: python3; на Linux ещё `xvfb`, `xrandr` (пакет `x11-xserver-utils`),
+`bubblewrap`, `unzip`, для `vpn incy ui` — `x11vnc`. На macOS ничего ставить не
+нужно. Клиент — JVM-приложение, в фоне занимает около 300 МБ памяти (на Linux
+плюс ~60 МБ Xvfb).
+
+Частота кадров на Linux. Окно INCY рисует Skiko, а в Xvfb без видеокарты оно
+рисуется программно. Режим экрана Xvfb по умолчанию без таймингов (dot clock 0):
+Skiko считает частоту экрана как 0/0 и перестаёт ограничивать кадры, и анимации
+окна (кольцо вокруг кнопки, окно обновления) держат ядро CPU на 100%. Поэтому
+коробка запускает Xvfb с `-noreset`, даёт ему режим на `VPN_INCY_FPS` Гц
+(по умолчанию 1) и перед запуском правит в jar Skiko нижний порог частоты
+с 60 на 1. Окно в `vpn incy ui` при этом обновляется раз в секунду; если
+мешает — `vpn stop incy && VPN_INCY_FPS=30 vpn incy setup` (частота задаётся
+при старте Xvfb).
 
 Ограничения:
 
@@ -296,7 +307,8 @@ ui` — `x11vnc`. На macOS ничего ставить не нужно. Кли
 `VPN_INCY_HTTP_PORT` (порт http→socks мостика, по умолчанию INCY+1),
 `VPN_INCY_SANDBOX` (`auto`/`on`/`off`), `VPN_INCY_HWID` (закрепить HWID),
 `VPN_INCY_VERSION`, `VPN_INCY_DIR`, `VPN_INCY_ASSET`,
-`VPN_INCY_TIMEOUT` (секунд на подключение, 60), `VPN_INCY_VNC_PORT` (5917).
+`VPN_INCY_TIMEOUT` (секунд на подключение, 60), `VPN_INCY_VNC_PORT` (5917),
+`VPN_INCY_FPS` (кадров в секунду окна в Xvfb, 1).
 
 ### Outline / Shadowsocks (ss://)
 

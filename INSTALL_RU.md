@@ -25,8 +25,8 @@ IP:PORT:USER:PASS                      # HTTP-прокси
 
 Для `incy://` на Linux нужны пакеты (на macOS ничего не нужно):
 ```bash
-sudo apt install xvfb bubblewrap unzip python3   # x11vnc — по желанию, для `vpn incy ui`
-vpn incy setup                                   # скачает INCY и импортирует ссылку
+sudo apt install xvfb x11-xserver-utils bubblewrap unzip python3   # x11vnc — по желанию, для `vpn incy ui`
+vpn incy setup                                                     # скачает INCY и импортирует ссылку
 ```
 
 Пример HTTP-прокси:

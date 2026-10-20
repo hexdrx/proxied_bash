@@ -53,6 +53,9 @@ INCY_START_TIMEOUT="${VPN_INCY_TIMEOUT:-60}"  # секунд на запуск J
 INCY_STOP_TIMEOUT=15
 INCY_VNC_PORT="${VPN_INCY_VNC_PORT:-5917}"
 INCY_XVFB_SCREEN="1280x800x24"
+# Частота кадров окна INCY в Xvfb. Окно никто не смотрит, а без лимита Skiko
+# рисует анимации программно на полной скорости и держит ядро CPU на 100%.
+INCY_FPS="${VPN_INCY_FPS:-1}"
 # Уже скачанный релизный файл (zip/dmg) вместо загрузки с GitHub — для машин,
 # где GitHub недоступен. sha256 проверяется так же.
 INCY_ASSET_FILE="${VPN_INCY_ASSET:-}"
@@ -335,8 +338,10 @@ incy_xvfb_start() {
 
     incy_detach_cmd
     rm -f "$INCY_XVFB_DISPLAY_FILE"
-    # -displayfd: Xvfb сам выбирает свободный номер экрана и пишет его в fd 3
-    "${INCY_DETACH[@]}" Xvfb -displayfd 3 -screen 0 "$INCY_XVFB_SCREEN" -nolisten tcp \
+    # -displayfd: Xvfb сам выбирает свободный номер экрана и пишет его в fd 3.
+    # -noreset: без него Xvfb сбрасывается, когда отключается последний клиент,
+    # и теряет режим из incy_xvfb_rate ещё до запуска INCY
+    "${INCY_DETACH[@]}" Xvfb -displayfd 3 -screen 0 "$INCY_XVFB_SCREEN" -nolisten tcp -noreset \
         3> "$INCY_XVFB_DISPLAY_FILE" < /dev/null > "$INCY_RUN_DIR/xvfb.log" 2>&1 &
     echo $! > "$INCY_XVFB_PID_FILE"
 
@@ -344,6 +349,7 @@ incy_xvfb_start() {
         num="$(tr -d '[:space:]' < "$INCY_XVFB_DISPLAY_FILE" 2>/dev/null)"
         if [ -n "$num" ]; then
             echo "$num" > "$INCY_XVFB_DISPLAY_FILE"
+            incy_xvfb_rate ":$num"
             echo ":$num"
             return 0
         fi
@@ -352,6 +358,56 @@ incy_xvfb_start() {
     done
     cat "$INCY_RUN_DIR/xvfb.log" >&2 2>/dev/null
     incy_err "failed to start Xvfb"
+}
+
+# У режима Xvfb нет таймингов (dot clock 0): Skiko считает частоту экрана как
+# 0/0 = NaN и перестаёт ограничивать кадры. Даём экрану режим на INCY_FPS Гц.
+incy_xvfb_rate() {
+    local display="$1" w h rest clock
+    command -v xrandr > /dev/null 2>&1 || {
+        echo "Warning: xrandr not found, INCY will use a full CPU core (sudo apt install x11-xserver-utils)" >&2
+        return 0
+    }
+    w="${INCY_XVFB_SCREEN%%x*}"
+    rest="${INCY_XVFB_SCREEN#*x}"
+    h="${rest%%x*}"
+    clock="$(awk -v w="$w" -v h="$h" -v f="$INCY_FPS" \
+        'BEGIN { printf "%.6f", (w + 20) * (h + 10) * f / 1000000 }')"
+    DISPLAY="$display" xrandr --newmode incy "$clock" \
+        "$w" $((w + 10)) $((w + 15)) $((w + 20)) "$h" $((h + 2)) $((h + 5)) $((h + 10)) > /dev/null 2>&1
+    DISPLAY="$display" xrandr --addmode screen incy > /dev/null 2>&1
+    DISPLAY="$display" xrandr --output screen --mode incy > /dev/null 2>&1 || \
+        echo "Warning: could not set ${INCY_FPS} Hz mode on Xvfb, INCY will use a full CPU core" >&2
+}
+
+# Skiko не опускает лимит кадров ниже 60 (MinMainstreamMonitorRefreshRate).
+# Окно в коробке никто не смотрит, поэтому порог правим на 1, а реальную частоту
+# задаёт режим Xvfb (incy_xvfb_rate). Повторный вызов ничего не меняет; после
+# обновления INCY jar распакован заново, и патч накладывается снова.
+incy_skiko_patch() {
+    local jar
+    for jar in "$INCY_APP_DIR"/lib/app/skiko-awt-[0-9]*.jar; do
+        [ -f "$jar" ] || continue
+        "$INCY_PYTHON" -I - "$jar" <<'EOF' || echo "Warning: failed to patch $jar, INCY will render at 60 fps" >&2
+import os, shutil, struct, sys, zipfile
+src = sys.argv[1]
+name = "org/jetbrains/skiko/DisplayKt.class"
+old = b"\x06" + struct.pack(">d", 60.0)
+new = b"\x06" + struct.pack(">d", 1.0)
+with zipfile.ZipFile(src) as z:
+    if z.read(name).count(old) != 1:
+        sys.exit(0)
+tmp = src + ".new"
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(tmp, "w") as zout:
+    for info in zin.infolist():
+        body = zin.read(info)
+        if info.filename == name:
+            body = body.replace(old, new)
+        zout.writestr(info, body, compress_type=info.compress_type)
+shutil.copystat(src, tmp)
+os.replace(tmp, src)
+EOF
+    done
 }
 
 incy_xvfb_stop() {
@@ -555,6 +611,7 @@ incy_start() {
     incy_make_shims || return 1
     incy_state seed || return 1
     if [ "$(incy_os)" = "linux" ]; then
+        incy_skiko_patch
         display="$(incy_xvfb_start)" || return 1
     fi
     incy_build_cmd "$display" "$@" || return 1

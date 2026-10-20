@@ -189,7 +189,7 @@ INSTALL_RU.md
 - Linux/Unix система
 - bash
 - python3 (только для v2ray-JSON подписок и incy:// ссылок; stdlib, без pip)
-- для incy:// на Linux: xvfb, bubblewrap, unzip (x11vnc — для `vpn incy ui`)
+- для incy:// на Linux: xvfb, x11-xserver-utils (xrandr), bubblewrap, unzip (x11vnc — для `vpn incy ui`)
 - sudo доступ для установки
 - Программы должны поддерживать HTTP_PROXY переменные окружения
 
